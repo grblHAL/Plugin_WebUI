@@ -1,6 +1,6 @@
 ## WebUI plugin
 
-Under development. Adds [ESP32-WEBUI}(https://github.com/luc-github/ESP3D-webui) support for networking capable boards and drivers.
+Under development. Adds [ESP32-WEBUI](https://github.com/luc-github/ESP3D-webui) support for networking capable boards and drivers.
 
 Dependencies:
 
