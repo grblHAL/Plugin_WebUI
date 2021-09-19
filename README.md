@@ -32,7 +32,7 @@ Luckily the new API can be bypassed by mapping the new API to the original.  The
 In addition several symbols that controls lwIP features has to added or modified.
 I have added these to Eclipse based build configurations, but sadly the Arduino IDE does not allow that.  
 
-See the patch [readme](./lwip%20patch#readme) for instructions for how to apply it.
+See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/blob/main/lwIP%20patch/README.md) for instructions for how to apply it.
 
 ---
 
