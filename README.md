@@ -15,7 +15,7 @@ The following drivers can be used with this plugin:
 | [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          |
 | [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          |
 
-#### Installation: ####
+#### Installation:
 
 Copy the provided [www](./www) folder to the root of the SD card.
 
@@ -25,20 +25,20 @@ Ensure `$360` \(HTTP port\) is set to `80`, `$307` \(Websocket port\) is set to 
 
 Enter the controller IP address in a browser window, if all is well the WebUI will then be loaded. Tip: Use `$I` to find the IP address if dynamically assigned.
 
-#### lwIP patch: ####
+#### lwIP patch:
 
 lwIP v 2.1.0 introduced an alternate TCP API for SSL support, the new API is used by the http daemon and it fails if not available even if SSL support is not required.  
 Luckily the new API can be bypassed by mapping the new API to the original.  The 2.1.0 distribution has a file that does this, this needs to be copied to the lwIP source code folder.  
 In addition several symbols that controls lwIP features has to added or modified.
 I have added these to Eclipse based build configurations, but sadly the Arduino IDE does not allow that.  
 
-See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/blob/main/lwIP%20patch/README.md) for instructions for how to apply it.
+See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/tree/3bc2b569057495f66e891c88bd073bc71ace8b83/lwIP%20patch) for instructions for how to apply it.
 
 ---
 
 __Note:__ The [ESP32 driver](https://github.com/grblHAL/ESP32) has its own WebUI implementation on top of the Espressif socket based http daemon and thus does not use this plugin.
 
-Dependencies:
+#### Dependencies:
 
 [Networking plugin](https://github.com/grblHAL/Plugin_networking)
 
