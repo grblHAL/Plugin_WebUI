@@ -508,6 +508,33 @@ static const char *sdcard_upload_handler (http_request_t *request)
     return NULL;
 }
 
+// Virtual spiffs
+
+static void spiffs_on_upload_name_parsed (char *name)
+{
+    static const char *prefix = "/www/";
+
+    size_t len = strlen(name), plen = strlen(prefix);
+    if(*name == '/')
+        plen--;
+
+    if(len + plen <= HTTP_UPLOAD_MAX_PATHLENGTH) {
+        memmove(name + plen, name, len + 1);
+        memcpy(name, prefix, plen);
+    }
+}
+
+static const char *spiffs_upload_handler (http_request_t *request)
+{
+    sdcard_upload_handler(request);
+
+    http_upload_on_filename_parsed(spiffs_on_upload_name_parsed);
+
+    return NULL;
+}
+
+/**/
+
 #endif
 
 bool is_authorized (http_request_t *req, webui_auth_level_t min_level)
@@ -913,7 +940,8 @@ void webui_init (void)
         { .uri = "/SD/*",     .method =  HTTP_Get,  .handler = sdcard_download_handler },
         { .uri = "/sdcard/*", .method =  HTTP_Get,  .handler = sdcard_download_handler },
         { .uri = "/login",    .method =  HTTP_Get,  .handler = login_handler },
-        { .uri = "/upload",   .method =  HTTP_Post, .handler = sdcard_upload_handler }
+        { .uri = "/upload",   .method =  HTTP_Post, .handler = sdcard_upload_handler },
+        { .uri = "/files",    .method =  HTTP_Post, .handler = spiffs_upload_handler }
     };
 
     httpd_register_uri_handlers(cgi, sizeof(cgi) / sizeof(httpd_uri_handler_t));
