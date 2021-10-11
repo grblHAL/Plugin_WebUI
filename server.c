@@ -47,7 +47,13 @@
 
 #include "grbl/nvs_buffer.h"
 
+#if WEBUI_INFLASH
+#include "filedata.h"
+#endif
+
 extern struct fs_file *fs_create (void);
+extern void fs_register_embedded_files (const embedded_file_t **files);
+
 void fs_reset (void);
 
 typedef struct {
@@ -144,7 +150,6 @@ static const char *command (http_request_t *request)
         fs_close(file);
 
     } else {
-
 
         if(strlen(data) == 1)
             WsStreamRxInsert(*data);
@@ -899,7 +904,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.01]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.02]" ASCII_EOL);
 }
 
 static bool webui_setup (settings_t *settings)
@@ -914,7 +919,6 @@ static bool webui_setup (settings_t *settings)
 
 void webui_init (void)
 {
-
 #if WEBUI_AUTH_ENABLE
     if((nvs_address = nvs_alloc(sizeof(webui_settings_t)))) {
         details.on_get_settings = grbl.on_get_settings;
@@ -945,6 +949,10 @@ void webui_init (void)
     };
 
     httpd_register_uri_handlers(cgi, sizeof(cgi) / sizeof(httpd_uri_handler_t));
+
+#if WEBUI_INFLASH
+    fs_register_embedded_files(ro_files);
+#endif
 }
 
 #endif
