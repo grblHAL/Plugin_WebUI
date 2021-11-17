@@ -385,7 +385,7 @@ static bool get_system_status (void)
 
     hal.stream.write(strappend(buf, 3, "Processor: ", hal.info, "\n"));
     hal.stream.write(strappend(buf, 3, "CPU Frequency: ", uitoa(hal.f_step_timer / (1024 * 1024)), "Mhz\n"));
-    hal.stream.write(strappend(buf, 7, "FW version: ", GRBL_VERSION, "(", GRBL_VERSION_BUILD, ")(", hal.info, ")\n"));
+    hal.stream.write(strappend(buf, 7, "FW version: ", GRBL_VERSION, "(", uitoa(GRBL_BUILD), ")(", hal.info, ")\n"));
     hal.stream.write(strappend(buf, 3, "Driver version: ", hal.driver_version, "\n"));
     if(hal.board)
         hal.stream.write(strappend(buf, 3, "Board: ", hal.board, "\n"));
