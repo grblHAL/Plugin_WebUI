@@ -122,7 +122,7 @@ static const char *command (http_request_t *request)
     if(busy)
         return NULL;
 
-    busy = true;
+    hal.stream.state.webui_connected = busy = true;
 
     if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
