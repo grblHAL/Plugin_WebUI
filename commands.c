@@ -31,7 +31,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "../networking/WsStream.h"
+#include "../networking/websocketd.h"
 #include "../networking/urldecode.h"
 #include "../networking/utils.h"
 #include "../networking/strutils.h"

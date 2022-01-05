@@ -35,7 +35,7 @@
 #include <stdio.h>
 
 #include "../networking/urldecode.h"
-#include "../networking/WsStream.h"
+#include "../networking/websocketd.h"
 #include "../networking/httpd.h"
 #include "../networking/utils.h"
 #include "../networking/strutils.h"
@@ -152,7 +152,7 @@ static const char *command (http_request_t *request)
     } else {
 
         if(strlen(data) == 1)
-            WsStreamRxInsert(*data);
+            websocketd_RxPutC(*data);
 
         else {
 
@@ -167,10 +167,10 @@ static const char *command (http_request_t *request)
                 }
 
                 while((c = *block++))
-                    WsStreamRxInsert(c);
+                    websocketd_RxPutC(c);
 
                 if(len > 1)
-                    WsStreamRxInsert(ASCII_LF);
+                    websocketd_RxPutC(ASCII_LF);
 
                 block = strtok(NULL, "\n");
             }
