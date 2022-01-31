@@ -428,11 +428,13 @@ static bool get_firmware_spec (void)
     strcat(buf, " # webcommunication: Sync: ");
     strcat(buf, uitoa(settings->websocket_port));
 #endif
-    strcat(buf, "# hostname:");
+    strcat(buf, " # hostname:");
     strcat(buf, settings->hostname);
 #if WIFI_SOFTAP
     strcat(buf,"(AP mode)");
 #endif
+    strcat(buf, " # axis:");
+    strcat(buf, uitoa(N_AXIS));
 
     hal.stream.write(buf);
 
