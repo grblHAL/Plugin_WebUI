@@ -10105,7 +10105,7 @@ PROGMEM static const embedded_file_t index_html_gz = {
 };
 
 // Array of pointers to files, NULL terminated
-PROGMEM static const embedded_file_t *ro_files[] = {
+static const embedded_file_t *ro_files[] = {
     &favicon_ico,
     &index_html_gz,
     NULL
