@@ -1,5 +1,9 @@
 ## WebUI plugin
 
+News \(20220719\): Added initial and experimental support for [WebUI v3](https://github.com/luc-github/ESP3D-WEBUI/discussions/94#discussioncomment-2861616). 
+
+---
+
 Adds [ESP32-WEBUI](https://github.com/luc-github/ESP3D-webui) support for some networking capable boards and drivers.
 
 Under development and partially implemented. Support for authentication is not yet ready and there is no support for a flash based file system \(and I do not plan to add that\).
@@ -19,7 +23,7 @@ The following drivers can be used with this plugin:
 
 Copy the provided [www](./www) folder to the root of the SD card.
 
-Enable WebUI support by uncommenting `WEBUI_ENABLE` in _my_machine.h_ and recompile/reflash.
+Enable WebUI support by uncommenting `#define WEBUI_ENABLE 1` in _my_machine.h_ and recompile/reflash.
 
 Ensure `$360` \(HTTP port\) is set to `80`, `$307` \(Websocket port\) is set to `81` and `$70` has flags set to enable both the http and websocket daemons. `15` is a safe value. Reboot.
 
@@ -50,4 +54,4 @@ __Note:__ The [ESP32 driver](https://github.com/grblHAL/ESP32) has its own WebUI
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2022-02-06
+2022-07-19

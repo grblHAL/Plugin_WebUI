@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2021 Terje Io
+  Copyright (c) 2019-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -124,7 +124,7 @@ static const char *command (http_request_t *request)
 
     hal.stream.state.webui_connected = busy = true;
 
-    if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL)
+    if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL && http_get_param_value(request, "cmd", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
 
     if((cmd = strstr(data, "[ESP"))) {
@@ -282,12 +282,13 @@ static FRESULT sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 static bool sd_ls (void *request, char *path, char *status)
 {
     bool ok;
+    uint_fast16_t pathlen = strlen(path);
     cJSON *root = cJSON_CreateObject(), *files = NULL;
 
     if((ok = (root && (files = cJSON_AddArrayToObject(root, "files"))))) {
 
-        if(strlen(path) > 1)
-            path[strlen(path) - 1] = '\0';
+        if(pathlen > 1 && path[pathlen - 1] == '/')
+            path[pathlen - 1] = '\0';
 
         sd_scan_dir(files, path, 1);
 
@@ -386,6 +387,12 @@ static const char *sdcard_handler (http_request_t *request)
     if(*action && *filename) {
 
         FILINFO file;
+        uint_fast16_t pathlen = strlen(path);
+
+        if(pathlen > 1 && path[pathlen - 1] != '/') {
+            path[pathlen] = '/';
+            path[pathlen + 1] = '\0';
+        }
 
 //        char *fullname = ((file_server_data_t *)req->user_ctx)->scratch;
 
@@ -904,7 +911,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.02]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.03]" ASCII_EOL);
 }
 
 static bool webui_setup (settings_t *settings)
@@ -941,10 +948,12 @@ void webui_init (void)
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method =  HTTP_Get,  .handler = command },
         { .uri = "/upload",   .method =  HTTP_Get,  .handler = sdcard_handler },
+        { .uri = "/sdfiles",  .method =  HTTP_Get,  .handler = sdcard_handler },
         { .uri = "/SD/*",     .method =  HTTP_Get,  .handler = sdcard_download_handler },
         { .uri = "/sdcard/*", .method =  HTTP_Get,  .handler = sdcard_download_handler },
         { .uri = "/login",    .method =  HTTP_Get,  .handler = login_handler },
         { .uri = "/upload",   .method =  HTTP_Post, .handler = sdcard_upload_handler },
+        { .uri = "/sdfiles",  .method =  HTTP_Post, .handler = sdcard_upload_handler },
         { .uri = "/files",    .method =  HTTP_Post, .handler = spiffs_upload_handler }
     };
 

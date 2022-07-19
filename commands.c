@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2021 Terje Io
+  Copyright (c) 2019-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "../networking/websocketd.h"
+#include "../networking/networking.h"
 #include "../networking/urldecode.h"
 #include "../networking/utils.h"
 #include "../networking/strutils.h"
@@ -40,6 +40,7 @@
 #include "server.h"
 
 #include "grbl/report.h"
+#include "grbl/state_machine.h"
 
 #if SDCARD_ENABLE
 #include "sdcard/sdcard.h"
@@ -85,6 +86,7 @@ typedef enum {
     //WebUICmd_SendMessage = 600,
     //WebUICmd_GetSetNotifications = 600,
     WebUICmd_ReadLocalFile = 700,
+    WebUICmd_StreamJobStatus = 701,
     WebUICmd_FormatFlashFS = 710,
     WebUICmd_GetFlashFSCapacity = 720,
     WebUICmd_GetFirmwareSpec = 800
@@ -92,10 +94,11 @@ typedef enum {
 
 typedef enum {
     WebUIType_IPAddress = 'A',
-    WebUIType_Boolean = 'B',
-    WebUIType_Flag = 'F',
+    WebUIType_Boolean = 'B',    // v2 only
+    WebUIType_Flag = 'F',       // v2 only
     WebUIType_Integer = 'I',
-    WebUIType_String = 'S'
+    WebUIType_String = 'S',
+    WebUIType_Byte = 'T'        // v3
 } webui_stype_t;
 
 typedef struct {
@@ -171,7 +174,7 @@ static char *get_arg (char *args, char *arg, bool spacedelimited)
 
 
 // add file to the JSON response array
-static bool add_setting (cJSON *settings, setting_id_t p, char t, int32_t bit, char *v, char *h, char *s, char *m)
+static bool add_setting (cJSON *settings, bool isv3, setting_id_t p, char t, int32_t bit, char *v, char *h, char *s, char *m)
 {
     bool ok = true;
 
@@ -181,6 +184,11 @@ static bool add_setting (cJSON *settings, setting_id_t p, char t, int32_t bit, c
     {
         char ps[12], ts[2];
 
+        if(isv3 && t == WebUIType_Boolean && *v != '0')
+            ok &= cJSON_AddStringToObject(setting, "V", uitoa(1 << bit)) != NULL;
+        else
+            ok &= cJSON_AddStringToObject(setting, "V", v) != NULL;
+
         strcpy(ps, uitoa(p));
 
         if(bit >= 0) {
@@ -188,13 +196,12 @@ static bool add_setting (cJSON *settings, setting_id_t p, char t, int32_t bit, c
             strcat(ps, uitoa(bit));
         }
 
-        ts[0] = t;
+        ts[0] = isv3 && (t == WebUIType_Boolean || t == WebUIType_Flag)  ? 'T' : t;
         ts[1] = '\0';
 
-        ok  = cJSON_AddStringToObject(setting, "F", "network") != NULL;
+        ok  = cJSON_AddStringToObject(setting, "F", "network/network") != NULL;
         ok &= cJSON_AddStringToObject(setting, "P", ps) != NULL;
         ok &= cJSON_AddStringToObject(setting, "T", ts) != NULL;
-        ok &= cJSON_AddStringToObject(setting, "V", v) != NULL;
         ok &= cJSON_AddStringToObject(setting, "H", h) != NULL;
 
         switch(t) {
@@ -208,7 +215,10 @@ static bool add_setting (cJSON *settings, setting_id_t p, char t, int32_t bit, c
 
                     for(i = 0; i < j; i++) {
                         option = cJSON_CreateObject();
-                        cJSON_AddStringToObject(option, strgetentry(opt, s, i, ','), strgetentry(val, m, i, ','));
+                        if(isv3 && i == 0)
+                            cJSON_AddStringToObject(option, strgetentry(opt, s, i, ','), uitoa(1 << bit));
+                        else
+                            cJSON_AddStringToObject(option, strgetentry(opt, s, i, ','), strgetentry(val, m, i, ','));
                         cJSON_AddItemToArray(options, option);
                     }
                 }
@@ -270,7 +280,7 @@ network_settings_t *get_network_settings (void)
     return &settings;
 }
 
-static bool get_settings (void)
+static bool get_settings (bool isv3)
 {
 //    list_settings_webui(NULL, NULL);
 //    return true;
@@ -279,35 +289,40 @@ static bool get_settings (void)
 
     cJSON *root = cJSON_CreateObject(), *settings = NULL;
 
-    if((ok = (root && (settings = cJSON_AddArrayToObject(root, "EEPROM"))))) {
+    if((ok = root != NULL) && isv3) {
+        ok &= cJSON_AddStringToObject(root, "cmd", "400") != NULL;
+        ok &= cJSON_AddStringToObject(root, "status", "ok") != NULL;
+    }
+
+    if((ok &= (settings = cJSON_AddArrayToObject(root, isv3 ? "data" : "EEPROM")) != NULL)) {
 
         network_settings_t *network = get_network_settings();
 
 //        hal.stream.write_is_json();
 
-        add_setting(settings, Setting_Hostname, WebUIType_String, -1, network->hostname, "Hostname", "33", "1");
+        add_setting(settings, isv3, Setting_Hostname, WebUIType_String, -1, network->hostname, "Hostname", "33", "1");
   #if HTTP_ENABLE
-        add_setting(settings, Setting_NetworkServices, WebUIType_Boolean, 2, uitoa(network->services.http), "HTTP protocol", "Enabled,Disabled", "1,0");
-        add_setting(settings, Setting_HttpPort, WebUIType_Integer, -1, uitoa(network->http_port), "HTTP Port", "65535", "1");
+        add_setting(settings, isv3, Setting_NetworkServices, WebUIType_Boolean, 2, uitoa(network->services.http), "HTTP protocol", "Enabled,Disabled", "1,0");
+        add_setting(settings, isv3, Setting_HttpPort, WebUIType_Integer, -1, uitoa(network->http_port), "HTTP Port", "65535", "1");
   #endif
   #if TELNET_ENABLE
-        add_setting(settings, Setting_NetworkServices, WebUIType_Boolean, 0, uitoa(network->services.telnet), "Telnet protocol", "Enabled,Disabled", "1,0");
-        add_setting(settings, Setting_TelnetPort, WebUIType_Integer, -1, uitoa(network->telnet_port), "Telnet Port", "65535", "1");
+        add_setting(settings, isv3, Setting_NetworkServices, WebUIType_Boolean, 0, uitoa(network->services.telnet), "Telnet protocol", "Enabled,Disabled", "1,0");
+        add_setting(settings, isv3, Setting_TelnetPort, WebUIType_Integer, -1, uitoa(network->telnet_port), "Telnet Port", "65535", "1");
   #endif
 
 #if WIFI_ENABLE
-        add_setting(settings, Setting_WifiMode, WebUIType_Boolean, -1, uitoa(wifi->mode), "Radio mode", "None,STA,AP", "0,1,2");
+        add_setting(settingsv, Setting_WifiMode, WebUIType_Boolean, -1, uitoa(wifi->mode), "Radio mode", "None,STA,AP", "0,1,2");
 
-        add_setting(settings, Setting_WiFi_STA_SSID, WebUIType_String, -1, wifi->sta.ssid, "Station SSID", "32", "1");
-        add_setting(settings, Setting_WiFi_STA_Password, WebUIType_String, -1, HIDDEN_PASSWORD, "Station Password", "64", "1");
-        add_setting(settings, Setting_IpMode, WebUIType_Boolean, -1, uitoa(settings->ip_mode), "Station IP Mode", "DHCP,Static", "1,0");
-        add_setting(settings, Setting_IpAddress, WebUIType_IPAddress, -1, iptoa(&settings->ip), "Station Static IP", "", "");
-        add_setting(settings, Setting_Gateway, WebUIType_IPAddress, -1, iptoa(&settings->gateway), "Station Static Gateway", "", "");
-        add_setting(settings, Setting_NetMask, WebUIType_IPAddress, -1, iptoa(&settings->mask), "Station Static Mask", "", "");
+        add_setting(settings, isv3, Setting_WiFi_STA_SSID, WebUIType_String, -1, wifi->sta.ssid, "Station SSID", "32", "1");
+        add_setting(settings, isv3, Setting_WiFi_STA_Password, WebUIType_String, -1, HIDDEN_PASSWORD, "Station Password", "64", "1");
+        add_setting(settings, isv3, Setting_IpMode, WebUIType_Boolean, -1, uitoa(settings->ip_mode), "Station IP Mode", "DHCP,Static", "1,0");
+        add_setting(settings, isv3, Setting_IpAddress, WebUIType_IPAddress, -1, iptoa(&settings->ip), "Station Static IP", "", "");
+        add_setting(settings, isv3, Setting_Gateway, WebUIType_IPAddress, -1, iptoa(&settings->gateway), "Station Static Gateway", "", "");
+        add_setting(settings, isv3, Setting_NetMask, WebUIType_IPAddress, -1, iptoa(&settings->mask), "Station Static Mask", "", "");
 
-        add_setting(settings, Setting_WiFi_AP_SSID, WebUIType_String, -1, wifi->ap.ssid, "AP SSID", "32", "1");
-        add_setting(settings, Setting_WiFi_AP_Password, WebUIType_String, -1, HIDDEN_PASSWORD, "AP Password", "64", "1");
-        add_setting(settings, Setting_IpAddress2, WebUIType_IPAddress, -1, iptoa(&settings->ip), "AP Static IP", "", "");
+        add_setting(settings, isv3, Setting_WiFi_AP_SSID, WebUIType_String, -1, wifi->ap.ssid, "AP SSID", "32", "1");
+        add_setting(settings, isv3, Setting_WiFi_AP_Password, WebUIType_String, -1, HIDDEN_PASSWORD, "AP Password", "64", "1");
+        add_setting(settings, isv3, Setting_IpAddress2, WebUIType_IPAddress, -1, iptoa(&settings->ip), "AP Static IP", "", "");
 
 #endif
 #if BLUETOOTH_ENABLE
@@ -378,65 +393,309 @@ static void set_setting (char *args)
     hal.stream.write(status == Status_OK ? "ok" : "Invalid or unknown setting");
 }
 
-static bool get_system_status (void)
+// add file to the JSON response array
+static bool add_system_value (cJSON *settings, char *id, char *value)
+{
+    bool ok = true;
+
+    cJSON *setting;
+
+    if((ok = (setting = cJSON_CreateObject()) != NULL))
+    {
+        ok  = cJSON_AddStringToObject(setting, "id", id) != NULL;
+        ok &= cJSON_AddStringToObject(setting, "value", value) != NULL;
+
+        if(ok)
+            cJSON_AddItemToArray(settings, setting);
+    }
+
+    return ok;
+}
+
+
+static bool get_system_status (bool json)
 {
     char buf[200];
-    network_settings_t *settings = get_network_settings();
+    network_info_t *network = networking_get_info();
 
-    hal.stream.write(strappend(buf, 3, "Processor: ", hal.info, "\n"));
-    hal.stream.write(strappend(buf, 3, "CPU Frequency: ", uitoa(hal.f_step_timer / (1024 * 1024)), "Mhz\n"));
-    hal.stream.write(strappend(buf, 7, "FW version: ", GRBL_VERSION, "(", uitoa(GRBL_BUILD), ")(", hal.info, ")\n"));
-    hal.stream.write(strappend(buf, 3, "Driver version: ", hal.driver_version, "\n"));
-    if(hal.board)
-        hal.stream.write(strappend(buf, 3, "Board: ", hal.board, "\n"));
-//    hal.stream.write(strappend(buf, 3, "Free memory: ", uitoa(esp_get_free_heap_size()), "\n"));
-    hal.stream.write("Baud rate: 115200\n");
-//    hal.stream.write(strappend(buf, 3, "IP: ", wifi_get_ipaddr(), "\n"));
- #if TELNET_ENABLE
-    hal.stream.write(strappend(buf, 3, "Data port: ", uitoa(settings->telnet_port), "\n"));
+    if(json) {
+
+        bool ok;
+
+        cJSON *root = cJSON_CreateObject(), *data = NULL;
+
+        if((ok = root != NULL)) {
+
+
+            ok &= cJSON_AddStringToObject(root, "cmd", "420") != NULL;
+            ok &= cJSON_AddStringToObject(root, "status", "ok") != NULL;
+
+            if((ok = (data = cJSON_AddArrayToObject(root, "data")) != NULL)) {
+
+                ok &= add_system_value(data, "chip id", hal.info);
+                ok &= add_system_value(data, "CPU Freq", uitoa(hal.f_step_timer / (1024 * 1024)));
+
+#if SDCARD_ENABLE
+                FATFS *fs;
+                DWORD fre_clust, used_sect, tot_sect;
+
+                ok &= add_system_value(data, "FS type", "SD");
+
+                if(f_getfree("", &fre_clust, &fs) == FR_OK) {
+                    tot_sect = (fs->n_fatent - 2) * fs->csize;
+                    used_sect = tot_sect - fre_clust * fs->csize;
+                    strcpy(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
+                    strcat(buf, "/");
+                    strcat(buf, btoa(tot_sect << 9));
+                    ok &= add_system_value(data, "FS usage", buf);
+                }
+#endif
+
+                ok &= add_system_value(data, "wifi", "OFF");
+                ok &= add_system_value(data, "ethernet", "ON");
+                if(network->status.services.http)
+                    ok &= add_system_value(data, "HTTP port", uitoa(network->status.http_port));
+                if(network->status.services.telnet)
+                    ok &= add_system_value(data, "Telnet port", uitoa(network->status.telnet_port));
+                if(network->status.services.ftp) {
+                    strappend(buf, 3, uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port));
+                    ok &= add_system_value(data, "Ftp ports", buf);
+                }
+                if(network->status.services.websocket)
+                    ok &= add_system_value(data, "Websocket port", uitoa(network->status.websocket_port));
+
+                if(network->is_ethernet) {
+
+                    if(*network->mac != '\0')
+                        ok &= add_system_value(data, "ethernet", network->mac);
+
+                    if(network->link_up)
+                        strappend(buf, 3, "connected (", uitoa(network->mbps), "Mbps)");
+                    else
+                        strcpy(buf, "disconnected");
+                    ok &= add_system_value(data, "cable", buf);
+
+                    ok &= add_system_value(data, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
+                    ok &= add_system_value(data, "ip", network->status.ip);
+
+                    if(*network->status.gateway != '\0')
+                        ok &= add_system_value(data, "gw", network->status.gateway);
+
+                    if(*network->status.mask != '\0')
+                        ok &= add_system_value(data, "msk", network->status.mask);
+                }
+
+#if WEBUI_AUTH_ENABLE
+                ok &= add_system_value(data, "authentication", "ON");
+#endif
+#if SDCARD_ENABLE
+                ok &= add_system_value(data, "sd", "ON(FatFS)");
+#endif
+                 ok &= add_system_value(data, "targetfw", "grbl");
+                 strappend(buf, 3, GRBL_VERSION, "-", uitoa(GRBL_BUILD));
+                 ok &= add_system_value(data, "FW ver", buf);
+                 ok &= add_system_value(data, "FW arch", hal.board);
+            }
+
+            char *resp = cJSON_PrintUnformatted(root);
+
+            if(resp) {
+
+                data_is_json();
+
+                hal.stream.write(resp);
+
+                cJSON_free(resp);
+            }
+        }
+
+        if(root)
+            cJSON_Delete(root);
+
+    } else {
+
+        hal.stream.write(strappend(buf, 3, "Processor: ", hal.info, "\n"));
+        hal.stream.write(strappend(buf, 3, "CPU Frequency: ", uitoa(hal.f_step_timer / (1024 * 1024)), "Mhz\n"));
+        hal.stream.write(strappend(buf, 7, "FW version: ", GRBL_VERSION, "(", uitoa(GRBL_BUILD), ")(", hal.info, ")\n"));
+        hal.stream.write(strappend(buf, 3, "Driver version: ", hal.driver_version, "\n"));
+        if(hal.board)
+            hal.stream.write(strappend(buf, 3, "Board: ", hal.board, "\n"));
+    //    hal.stream.write(strappend(buf, 3, "Free memory: ", uitoa(esp_get_free_heap_size()), "\n"));
+        hal.stream.write("Baud rate: 115200\n");
+        hal.stream.write(strappend(buf, 3, "IP: ", network->status.ip, "\n"));
+     #if TELNET_ENABLE
+        hal.stream.write(strappend(buf, 3, "Data port: ", uitoa(network->status.telnet_port), "\n"));
+     #endif
+     #if TELNET_ENABLE
+        hal.stream.write(strappend(buf, 3, "Web port: ", uitoa(network->status.http_port), "\n"));
+     #endif
+     #if WEBSOCKET_ENABLE
+        hal.stream.write(strappend(buf, 3, "Websocket port: ", uitoa(network->status.websocket_port), "\n"));
  #endif
- #if TELNET_ENABLE
-    hal.stream.write(strappend(buf, 3, "Web port: ", uitoa(settings->http_port), "\n"));
- #endif
- #if WEBSOCKET_ENABLE
-    hal.stream.write(strappend(buf, 3, "Websocket port: ", uitoa(settings->websocket_port), "\n"));
- #endif
+
+    }
 
     return true;
 }
 
-static bool get_firmware_spec (void)
+static bool handle_job_status(bool json, char *args)
+{
+    bool ok;
+    sdcard_job_t *job = sdcard_get_job_info();
+    cJSON *root = cJSON_CreateObject();
+    char *action = get_arg(args, " action=", true);
+
+    ok = root && cJSON_AddStringToObject(root, "cmd", "701") != NULL;
+
+    if(action) {
+
+        switch(strlookup(action, "pause,resume,abort", ',')) {
+
+            case 0:
+                if(job)
+                    grbl.enqueue_realtime_command(CMD_FEED_HOLD);
+                ok &= cJSON_AddStringToObject(root, "status", job ? "Stream paused" : "No stream to pause") != NULL;
+                break;
+
+            case 1:
+                if(job)
+                    grbl.enqueue_realtime_command(CMD_CYCLE_START);
+                ok &= cJSON_AddStringToObject(root, "status", job ? "Stream resumed" : "No stream to resume") != NULL;
+                break;
+
+            case 2:
+                if(job)
+                    grbl.enqueue_realtime_command(CMD_STOP);
+                ok &= cJSON_AddStringToObject(root, "status", job ? "Stream aborted" : "No stream to abort") != NULL;
+                break;
+
+            default:
+                ok &= cJSON_AddStringToObject(root, "status", "Unknown action") != NULL;
+                break;
+        }
+
+    } else if(job) {
+
+        switch(state_get()) {
+
+            case STATE_HOLD:
+                ok &= cJSON_AddStringToObject(root, "status", "pause stream") != NULL;
+                break;
+
+            default:
+                ok &= cJSON_AddStringToObject(root, "status", "processing") != NULL;
+                ok &= cJSON_AddStringToObject(root, "total", uitoa(job->size)) != NULL;
+                ok &= cJSON_AddStringToObject(root, "processed", uitoa(job->pos)) != NULL;
+                ok &= cJSON_AddStringToObject(root, "name", job->name) != NULL;
+                break;
+        }
+
+    } else {
+
+        ok &= cJSON_AddStringToObject(root, "status", "no stream") != NULL;
+        if(gc_state.last_error != Status_OK)
+            ok &= cJSON_AddStringToObject(root, "code", uitoa(gc_state.last_error)) != NULL;
+    }
+
+    if(root) {
+
+        char *resp = cJSON_PrintUnformatted(root);
+
+        if(resp) {
+
+            data_is_json();
+
+            hal.stream.write(resp);
+
+            cJSON_free(resp);
+        }
+
+        cJSON_Delete(root);
+    }
+
+    return true;
+}
+
+static bool get_firmware_spec (bool json)
 {
     char buf[200];
-    network_settings_t *settings = get_network_settings();
+    network_info_t *network = networking_get_info();
 
-    strcpy(buf, "FW version:");
-    strcat(buf, GRBL_VERSION);
-    strcat(buf, " # FW target:grbl-embedded # FW HW:");
-#if SDCARD_ENABLE
-    strcat(buf, "Direct SD");
-#else
-    strcat(buf, "No SD");
-#endif
-    strcat(buf, " # primary sd:/sd # secondary sd:none # authentication:");
-#if WEBUI_AUTH_ENABLE
-    strcat(buf, "yes");
-#else
-    strcat(buf, "no");
-#endif
-#if HTTP_ENABLE
-    strcat(buf, " # webcommunication: Sync: ");
-    strcat(buf, uitoa(settings->websocket_port));
-#endif
-    strcat(buf, " # hostname:");
-    strcat(buf, settings->hostname);
-#if WIFI_SOFTAP
-    strcat(buf,"(AP mode)");
-#endif
-    strcat(buf, " # axis:");
-    strcat(buf, uitoa(N_AXIS));
+    if(json) {
 
-    hal.stream.write(buf);
+        bool ok;
+
+        cJSON *root = cJSON_CreateObject(), *data = NULL;
+
+        if((ok = root != NULL)) {
+
+            ok &= cJSON_AddStringToObject(root, "cmd", "800") != NULL;
+            ok &= cJSON_AddStringToObject(root, "status", "ok") != NULL;
+
+            if((ok = (data = cJSON_AddObjectToObject(root, "data")) != NULL)) {
+
+                ok &= cJSON_AddStringToObject(data, "FWVersion", GRBL_VERSION) != NULL;
+                ok &= cJSON_AddStringToObject(data, "FWTarget", "grbl") != NULL;
+                ok &= cJSON_AddStringToObject(data, "FWTargetID", "10") != NULL;
+                ok &= cJSON_AddStringToObject(data, "Setup", "Enabled") != NULL;
+                ok &= cJSON_AddStringToObject(data, "SDConnection", "direct") != NULL;
+                ok &= cJSON_AddStringToObject(data, "SerialProtocol", "Socket") != NULL;
+                ok &= cJSON_AddStringToObject(data, "Authentication", "Disabled") != NULL;
+                ok &= cJSON_AddStringToObject(data, "WebCommunication", "Synchronous") != NULL;
+                ok &= cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip) != NULL;
+                ok &= cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port)) != NULL;
+                ok &= cJSON_AddStringToObject(data, "Hostname", network->status.hostname) != NULL;
+                ok &= cJSON_AddStringToObject(data, "WebUpdate", "Disabled") != NULL;
+                ok &= cJSON_AddStringToObject(data, "FileSystem", "directsd") != NULL;
+                ok &= cJSON_AddStringToObject(data, "Time", "none") != NULL;
+
+            }
+
+            char *resp = cJSON_PrintUnformatted(root);
+
+            if(resp) {
+
+                data_is_json();
+
+                hal.stream.write(resp);
+
+                cJSON_free(resp);
+            }
+        }
+
+        if(root)
+            cJSON_Delete(root);
+
+    } else {
+
+        strcpy(buf, "FW version:");
+        strcat(buf, GRBL_VERSION);
+        strcat(buf, " # FW target:grbl-embedded # FW HW:");
+    #if SDCARD_ENABLE
+        strcat(buf, "Direct SD");
+    #else
+        strcat(buf, "No SD");
+    #endif
+        strcat(buf, " # primary sd:/sd # secondary sd:none # authentication:");
+    #if WEBUI_AUTH_ENABLE
+        strcat(buf, "yes");
+    #else
+        strcat(buf, "no");
+    #endif
+    #if HTTP_ENABLE
+        strcat(buf, " # webcommunication: Sync: ");
+        strcat(buf, uitoa(network->status.websocket_port));
+    #endif
+        strcat(buf, " # hostname:");
+        strcat(buf, network->status.hostname);
+    #if WIFI_SOFTAP
+        strcat(buf,"(AP mode)");
+    #endif
+        strcat(buf, " # axis:");
+        strcat(buf, uitoa(N_AXIS));
+
+        hal.stream.write(buf);
+    }
 
     return true;
 }
@@ -503,6 +762,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
 {
     status_code_t status = Status_OK;
     char response[100];
+    bool json = strstr(args, "json=yes");
 
 //  hal.delay_ms(100, NULL);
 
@@ -587,7 +847,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
                 case WebUICmd_GetSetRadioMode:
                     if(*args == '\0') {
                         char mode[6];
-                        strgetentry(mode, "OFF,STA,AP,APSTA", network->mode, ',');
+                        strgetentry(mode, "OFF,STA,AP,APSTA", network->status.mode, ',');
                         hal.stream.write(strappend(response, 2, mode, "\n"));
                         status = Status_OK;
                     } else {
@@ -632,8 +892,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
     } else switch((webui_cmd_t)command) {
 
         case WebUICmd_GetCurrentIP:
-            hal.stream.write(strappend(response, 3, args, "10.0.0.7", "\n"));
-//            hal.stream.write(strappend(response, 3, args, wifi_get_ipaddr(), "\n"));
+            hal.stream.write(strappend(response, 3, args, networking_get_info()->status.ip, "\n"));
             break;
 
         case WebUICmd_GetSDCardStatus:
@@ -641,7 +900,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
             break;
 
         case WebUICmd_GetSDCardContent:
-                status = sys_execute("$F");
+            status = sys_execute("$F");
             break;
 
         case WebUICmd_PrintSD:
@@ -658,7 +917,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
             break;
 
         case WebUICmd_GetSettings:
-            get_settings();
+            get_settings(json);
             break;
 
         case WebUICmd_SetEEPROMSetting:
@@ -673,7 +932,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
 #endif
 
         case WebUICmd_GetStatus:
-            get_system_status();
+            get_system_status(json);
             break;
 
         case WebUICmd_Reboot:
@@ -686,6 +945,10 @@ status_code_t webui_command_handler (uint32_t command, char *args)
                     status = Status_InvalidStatement;
                 hal.stream.write(status == Status_OK ? "ok" : "Error:Incorrect Command");
             }
+            break;
+
+        case WebUICmd_StreamJobStatus:
+            handle_job_status(json, args);
             break;
 
 #if FLASHFS_ENABLE
@@ -731,7 +994,7 @@ status_code_t webui_command_handler (uint32_t command, char *args)
 #endif
 
         case WebUICmd_GetFirmwareSpec:
-            get_firmware_spec();
+            get_firmware_spec(json);
             break;
 
         default:
