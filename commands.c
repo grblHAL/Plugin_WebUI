@@ -412,6 +412,29 @@ static bool add_system_value (cJSON *settings, char *id, char *value)
     return ok;
 }
 
+static cJSON *create_json_response_hdr (webui_cmd_t cmd, bool array, bool ok, cJSON **data, const char *msg)
+{
+    bool success;
+    cJSON *root = cJSON_CreateObject();
+
+    if((success = root != NULL)) {
+        success &= cJSON_AddStringToObject(root, "cmd", uitoa((uint32_t)cmd)) != NULL;
+        success &= cJSON_AddStringToObject(root, "status", ok ? "ok" : "error") != NULL;
+        if(msg)
+            success &= cJSON_AddStringToObject(root, "data", msg) != NULL;
+        else if(data != NULL)
+            success &= (*data = (array ? cJSON_AddArrayToObject(root, "data") : cJSON_AddObjectToObject(root, "data"))) != NULL;
+        else
+            success = false;
+    }
+
+    if(!ok && root) {
+        cJSON_Delete(root);
+        root = NULL;
+    }
+
+    return root;
+}
 
 static bool get_system_status (bool json)
 {
@@ -421,81 +444,74 @@ static bool get_system_status (bool json)
     if(json) {
 
         bool ok;
+        cJSON *root, *data;
 
-        cJSON *root = cJSON_CreateObject(), *data = NULL;
+        if((ok = (root = create_json_response_hdr(WebUICmd_GetStatus, true, true, &data, NULL)) != NULL)) {
 
-        if((ok = root != NULL)) {
-
-
-            ok &= cJSON_AddStringToObject(root, "cmd", "420") != NULL;
-            ok &= cJSON_AddStringToObject(root, "status", "ok") != NULL;
-
-            if((ok = (data = cJSON_AddArrayToObject(root, "data")) != NULL)) {
-
-                ok &= add_system_value(data, "chip id", hal.info);
-                ok &= add_system_value(data, "CPU Freq", uitoa(hal.f_step_timer / (1024 * 1024)));
+            ok &= add_system_value(data, "chip id", hal.info);
+            ok &= add_system_value(data, "CPU Freq", uitoa(hal.f_step_timer / (1024 * 1024)));
 
 #if SDCARD_ENABLE
-                FATFS *fs;
-                DWORD fre_clust, used_sect, tot_sect;
+            FATFS *fs;
+            DWORD fre_clust, used_sect, tot_sect;
 
-                ok &= add_system_value(data, "FS type", "SD");
+            ok &= add_system_value(data, "FS type", "SD");
 
-                if(f_getfree("", &fre_clust, &fs) == FR_OK) {
-                    tot_sect = (fs->n_fatent - 2) * fs->csize;
-                    used_sect = tot_sect - fre_clust * fs->csize;
-                    strcpy(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
-                    strcat(buf, "/");
-                    strcat(buf, btoa(tot_sect << 9));
-                    ok &= add_system_value(data, "FS usage", buf);
-                }
+            if(f_getfree("", &fre_clust, &fs) == FR_OK) {
+                tot_sect = (fs->n_fatent - 2) * fs->csize;
+                used_sect = tot_sect - fre_clust * fs->csize;
+                strcpy(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
+                strcat(buf, "/");
+                strcat(buf, btoa(tot_sect << 9));
+                ok &= add_system_value(data, "FS usage", buf);
+            }
 #endif
 
-                ok &= add_system_value(data, "wifi", "OFF");
-                ok &= add_system_value(data, "ethernet", "ON");
-                if(network->status.services.http)
-                    ok &= add_system_value(data, "HTTP port", uitoa(network->status.http_port));
-                if(network->status.services.telnet)
-                    ok &= add_system_value(data, "Telnet port", uitoa(network->status.telnet_port));
-                if(network->status.services.ftp) {
-                    strappend(buf, 3, uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port));
-                    ok &= add_system_value(data, "Ftp ports", buf);
-                }
-                if(network->status.services.websocket)
-                    ok &= add_system_value(data, "Websocket port", uitoa(network->status.websocket_port));
+            ok &= add_system_value(data, "wifi", "OFF");
+            ok &= add_system_value(data, "ethernet", "ON");
+            if(network->status.services.http)
+                ok &= add_system_value(data, "HTTP port", uitoa(network->status.http_port));
+            if(network->status.services.telnet)
+                ok &= add_system_value(data, "Telnet port", uitoa(network->status.telnet_port));
+            if(network->status.services.ftp) {
+                strappend(buf, 3, uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port));
+                ok &= add_system_value(data, "Ftp ports", buf);
+            }
+            if(network->status.services.websocket)
+                ok &= add_system_value(data, "Websocket port", uitoa(network->status.websocket_port));
 
-                if(network->is_ethernet) {
+            if(network->is_ethernet) {
 
-                    if(*network->mac != '\0')
-                        ok &= add_system_value(data, "ethernet", network->mac);
+                if(*network->mac != '\0')
+                    ok &= add_system_value(data, "ethernet", network->mac);
 
-                    if(network->link_up)
-                        strappend(buf, 3, "connected (", uitoa(network->mbps), "Mbps)");
-                    else
-                        strcpy(buf, "disconnected");
-                    ok &= add_system_value(data, "cable", buf);
+                if(network->link_up)
+                    strappend(buf, 3, "connected (", uitoa(network->mbps), "Mbps)");
+                else
+                    strcpy(buf, "disconnected");
+                ok &= add_system_value(data, "cable", buf);
 
-                    ok &= add_system_value(data, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
-                    ok &= add_system_value(data, "ip", network->status.ip);
+                ok &= add_system_value(data, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
+                ok &= add_system_value(data, "ip", network->status.ip);
 
-                    if(*network->status.gateway != '\0')
-                        ok &= add_system_value(data, "gw", network->status.gateway);
+                if(*network->status.gateway != '\0')
+                    ok &= add_system_value(data, "gw", network->status.gateway);
 
-                    if(*network->status.mask != '\0')
-                        ok &= add_system_value(data, "msk", network->status.mask);
-                }
+                if(*network->status.mask != '\0')
+                    ok &= add_system_value(data, "msk", network->status.mask);
+            }
 
 #if WEBUI_AUTH_ENABLE
-                ok &= add_system_value(data, "authentication", "ON");
+            ok &= add_system_value(data, "authentication", "ON");
 #endif
 #if SDCARD_ENABLE
-                ok &= add_system_value(data, "sd", "ON(FatFS)");
+            ok &= add_system_value(data, "sd", "ON(FatFS)");
 #endif
-                 ok &= add_system_value(data, "targetfw", "grbl");
-                 strappend(buf, 3, GRBL_VERSION, "-", uitoa(GRBL_BUILD));
-                 ok &= add_system_value(data, "FW ver", buf);
-                 ok &= add_system_value(data, "FW arch", hal.board);
-            }
+             ok &= add_system_value(data, "targetfw", "grbl");
+             strappend(buf, 3, GRBL_VERSION, "-", uitoa(GRBL_BUILD));
+             ok &= add_system_value(data, "FW ver", buf);
+             ok &= add_system_value(data, "FW arch", hal.board);
+
 
             char *resp = cJSON_PrintUnformatted(root);
 
@@ -538,63 +554,65 @@ static bool get_system_status (bool json)
     return true;
 }
 
-static bool handle_job_status(bool json, char *args)
+static bool handle_job_status (bool json, char *args)
 {
     bool ok;
     sdcard_job_t *job = sdcard_get_job_info();
-    cJSON *root = cJSON_CreateObject();
+    cJSON *root, *data;
     char *action = get_arg(args, " action=", true);
 
-    ok = root && cJSON_AddStringToObject(root, "cmd", "701") != NULL;
+    if((ok = (root = create_json_response_hdr(WebUICmd_StreamJobStatus, false, true, &data, NULL)) != NULL)) {
 
-    if(action) {
+        if(action) {
 
-        switch(strlookup(action, "pause,resume,abort", ',')) {
+            switch(strlookup(action, "pause,resume,abort", ',')) {
 
-            case 0:
-                if(job)
-                    grbl.enqueue_realtime_command(CMD_FEED_HOLD);
-                ok &= cJSON_AddStringToObject(root, "status", job ? "Stream paused" : "No stream to pause") != NULL;
-                break;
+                case 0:
+                    if(job)
+                        grbl.enqueue_realtime_command(CMD_FEED_HOLD);
+                    ok &= cJSON_AddStringToObject(data, "status", job ? "Stream paused" : "No stream to pause") != NULL;
+                    break;
 
-            case 1:
-                if(job)
-                    grbl.enqueue_realtime_command(CMD_CYCLE_START);
-                ok &= cJSON_AddStringToObject(root, "status", job ? "Stream resumed" : "No stream to resume") != NULL;
-                break;
+                case 1:
+                    if(job)
+                        grbl.enqueue_realtime_command(CMD_CYCLE_START);
+                    ok &= cJSON_AddStringToObject(data, "status", job ? "Stream resumed" : "No stream to resume") != NULL;
+                    break;
 
-            case 2:
-                if(job)
-                    grbl.enqueue_realtime_command(CMD_STOP);
-                ok &= cJSON_AddStringToObject(root, "status", job ? "Stream aborted" : "No stream to abort") != NULL;
-                break;
+                case 2:
+                    if(job)
+                        grbl.enqueue_realtime_command(CMD_STOP);
+                    ok &= cJSON_AddStringToObject(data, "status", job ? "Stream aborted" : "No stream to abort") != NULL;
+                    break;
 
-            default:
-                ok &= cJSON_AddStringToObject(root, "status", "Unknown action") != NULL;
-                break;
+                default:
+                    ok &= cJSON_AddStringToObject(data, "status", "Unknown action") != NULL;
+                    break;
+            }
+
+        } else if(job) {
+
+            switch(state_get()) {
+
+                case STATE_HOLD:
+                    ok &= cJSON_AddStringToObject(data, "status", "pause stream") != NULL;
+                    break;
+
+                default:
+                    ok &= cJSON_AddStringToObject(data, "status", "processing") != NULL;
+                    ok &= cJSON_AddStringToObject(data, "total", uitoa(job->size)) != NULL;
+                    ok &= cJSON_AddStringToObject(data, "processed", uitoa(job->pos)) != NULL;
+                    ok &= cJSON_AddStringToObject(data, "type", "SD") != NULL;
+                    ok &= cJSON_AddStringToObject(data, "name", job->name) != NULL;
+                    break;
+            }
+
+        } else {
+
+            ok &= cJSON_AddStringToObject(data, "status", "no stream") != NULL;
+            if(gc_state.last_error != Status_OK)
+                ok &= cJSON_AddStringToObject(data, "code", uitoa(gc_state.last_error)) != NULL;
         }
-
-    } else if(job) {
-
-        switch(state_get()) {
-
-            case STATE_HOLD:
-                ok &= cJSON_AddStringToObject(root, "status", "pause stream") != NULL;
-                break;
-
-            default:
-                ok &= cJSON_AddStringToObject(root, "status", "processing") != NULL;
-                ok &= cJSON_AddStringToObject(root, "total", uitoa(job->size)) != NULL;
-                ok &= cJSON_AddStringToObject(root, "processed", uitoa(job->pos)) != NULL;
-                ok &= cJSON_AddStringToObject(root, "name", job->name) != NULL;
-                break;
-        }
-
-    } else {
-
-        ok &= cJSON_AddStringToObject(root, "status", "no stream") != NULL;
-        if(gc_state.last_error != Status_OK)
-            ok &= cJSON_AddStringToObject(root, "code", uitoa(gc_state.last_error)) != NULL;
     }
 
     if(root) {
@@ -624,32 +642,24 @@ static bool get_firmware_spec (bool json)
     if(json) {
 
         bool ok;
+        cJSON *root, *data;
 
-        cJSON *root = cJSON_CreateObject(), *data = NULL;
+        if((ok = (root = create_json_response_hdr(WebUICmd_GetFirmwareSpec, false, true, &data, NULL)) != NULL)) {
 
-        if((ok = root != NULL)) {
-
-            ok &= cJSON_AddStringToObject(root, "cmd", "800") != NULL;
-            ok &= cJSON_AddStringToObject(root, "status", "ok") != NULL;
-
-            if((ok = (data = cJSON_AddObjectToObject(root, "data")) != NULL)) {
-
-                ok &= cJSON_AddStringToObject(data, "FWVersion", GRBL_VERSION) != NULL;
-                ok &= cJSON_AddStringToObject(data, "FWTarget", "grbl") != NULL;
-                ok &= cJSON_AddStringToObject(data, "FWTargetID", "10") != NULL;
-                ok &= cJSON_AddStringToObject(data, "Setup", "Enabled") != NULL;
-                ok &= cJSON_AddStringToObject(data, "SDConnection", "direct") != NULL;
-                ok &= cJSON_AddStringToObject(data, "SerialProtocol", "Socket") != NULL;
-                ok &= cJSON_AddStringToObject(data, "Authentication", "Disabled") != NULL;
-                ok &= cJSON_AddStringToObject(data, "WebCommunication", "Synchronous") != NULL;
-                ok &= cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip) != NULL;
-                ok &= cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port)) != NULL;
-                ok &= cJSON_AddStringToObject(data, "Hostname", network->status.hostname) != NULL;
-                ok &= cJSON_AddStringToObject(data, "WebUpdate", "Disabled") != NULL;
-                ok &= cJSON_AddStringToObject(data, "FileSystem", "directsd") != NULL;
-                ok &= cJSON_AddStringToObject(data, "Time", "none") != NULL;
-
-            }
+            ok &= cJSON_AddStringToObject(data, "FWVersion", GRBL_VERSION) != NULL;
+            ok &= cJSON_AddStringToObject(data, "FWTarget", "grbl") != NULL;
+            ok &= cJSON_AddStringToObject(data, "FWTargetID", "10") != NULL;
+            ok &= cJSON_AddStringToObject(data, "Setup", "Enabled") != NULL;
+            ok &= cJSON_AddStringToObject(data, "SDConnection", "direct") != NULL;
+            ok &= cJSON_AddStringToObject(data, "SerialProtocol", "Socket") != NULL;
+            ok &= cJSON_AddStringToObject(data, "Authentication", "Disabled") != NULL;
+            ok &= cJSON_AddStringToObject(data, "WebCommunication", "Synchronous") != NULL;
+            ok &= cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip) != NULL;
+            ok &= cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port)) != NULL;
+            ok &= cJSON_AddStringToObject(data, "Hostname", network->status.hostname) != NULL;
+            ok &= cJSON_AddStringToObject(data, "WebUpdate", "Disabled") != NULL;
+            ok &= cJSON_AddStringToObject(data, "FileSystem", "directsd") != NULL;
+            ok &= cJSON_AddStringToObject(data, "Time", "none") != NULL;
 
             char *resp = cJSON_PrintUnformatted(root);
 
