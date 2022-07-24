@@ -1,6 +1,7 @@
 ## WebUI plugin
 
-News \(20220719\): Added initial and experimental support for [WebUI v3](https://github.com/luc-github/ESP3D-WEBUI/discussions/94#discussioncomment-2861616). 
+News \(20220719\): Added initial and experimental support for [WebUI v3](https://github.com/luc-github/ESP3D-WEBUI/discussions/94#discussioncomment-2861616).  
+Copy the files in the [www/v3](www/v3) folder to the _www_ folder on your SD card to activate. Requires grblHAL build 20220722 or later.
 
 ---
 
@@ -54,4 +55,4 @@ __Note:__ The [ESP32 driver](https://github.com/grblHAL/ESP32) has its own WebUI
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2022-07-19
+2022-07-24
