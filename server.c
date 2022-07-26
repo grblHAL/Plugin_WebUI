@@ -45,30 +45,18 @@
 
 #include "commands.h"
 
-#include "grbl/nvs_buffer.h"
-
 #if WEBUI_INFLASH
 #include "filedata.h"
 #endif
+#if WEBUI_AUTH_ENABLE
+#include "login.h"
+#endif
 
 extern struct fs_file *fs_create (void);
+extern int fs_bytes_left (struct fs_file *file);
 extern void fs_register_embedded_files (const embedded_file_t **files);
 
 void fs_reset (void);
-
-typedef struct {
-    password_t admin_password;
-    password_t user_password;
-} webui_settings_t;
-
-typedef struct webui_auth {
-    webui_auth_level_t level;
-    ip_addr_t ip;
-    user_id_t user_id;
-    session_id_t session_id;
-    uint32_t last_access;
-    struct webui_auth *next;
-} webui_auth_t;
 
 static bool file_is_json = false;
 static driver_setup_ptr driver_setup;
@@ -77,15 +65,6 @@ static on_stream_changed_ptr on_stream_changed;
 static on_report_options_ptr on_report_options;
 static stream_write_ptr pre_stream;
 static stream_write_ptr claim_stream;
-#if WEBUI_AUTH_ENABLE
-static webui_auth_t *sessions = NULL;
-static webui_auth_level_t get_auth_level (http_request_t *request);
-static webui_settings_t webui;
-static nvs_address_t nvs_address;
-static void webui_settings_restore (void);
-static void webui_settings_load (void);
-bool is_authorized (http_request_t *req, webui_auth_level_t min_level);
-#endif
 
 void data_is_json (void)
 {
@@ -110,6 +89,18 @@ bool claim_output (struct fs_file **file)
     return claim_stream != NULL;
 }
 
+#if !WEBUI_AUTH_ENABLE
+
+static webui_auth_level_t get_auth_level (http_request_t *req)
+{
+    return WebUIAuth_Admin;
+}
+
+#endif
+
+//static ip_addr_t ip;
+//static uint16_t port;
+
 //static const char *command (int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
 static const char *command (http_request_t *request)
 {
@@ -127,24 +118,90 @@ static const char *command (http_request_t *request)
     if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL && http_get_param_value(request, "cmd", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
 
+//    ip = http_get_remote_ip(request);
+//    port = http_get_remote_port(request);
+
     if((cmd = strstr(data, "[ESP"))) {
 
         struct fs_file *file;
+        status_code_t status;
 
         claim_output(&file);
 
         cmd += 4;
 
-        char *args = NULL;
+        uint_fast16_t argc = 0;
+        char c, cp = '\0', *args = NULL, **argv = NULL, *tmp, **tmp2, *tmp3;
 
         if((ok = (args = strchr(cmd, ']')))) {
+
             *args++ = '\0';
 
+            if(*args) {
+
+                // Trim leading and trailing spaces
+                while(*args == ' ')
+                    args++;
+
+                if((tmp = args + strlen(args)) != args) {
+                    while(*(--tmp) == ' ')
+                        *tmp = '\0';
+                }
+
+                // remove duplicate delimiters (spaces)
+                tmp = tmp3 = args;
+                while((c = *tmp++) != '\0') {
+                    if(c != ' ' || cp != ' ')
+                        *tmp3++ = c;
+                    cp = c;
+                }
+                *tmp3 = '\0';
+            }
+
+            // tokenize arguments (if any)
+            if(*args) {
+
+                argc = 1;
+                tmp = args;
+                while((c = *tmp++) != '\0') {
+                    if(c == ' ')
+                        argc++;
+                }
+
+                if(argc == 1)
+                    argv = &args;
+                else if((ok = !!(argv = tmp2 = malloc(sizeof(char *) * argc)))) {
+
+                    tmp = strtok(args, " ");
+                    while(tmp) {
+                        *tmp2++ = tmp;
+                        tmp = strtok(NULL, " ");
+                    }
+
+                    tmp = args;
+                    while((c = *tmp) != '\0') {
+                        if(c == ' ')
+                            *tmp = '\0';
+                        tmp++;
+                    }
+                } else {
+                    http_set_response_status(request, "500 Internal server error");
+                    hal.stream.write("Failed to generate response");
+                }
+            }
+
+            ok &= (status = webui_command_handler(atol(cmd), argc, argv, get_auth_level(request))) == Status_OK;
+
 #if WEBUI_AUTH_ENABLE
-//            if((ok = is_authorized(request, get_auth_required(atol(cmd), args))))
+            if(status == Status_AuthenticationRequired || status == Status_AccessDenied) {
+                http_set_response_status(request, status == Status_AuthenticationRequired ? "401 Unauthorized" : "403 Forbidden");
+                if(fs_bytes_left(file) == 0)
+                    hal.stream.write(status == Status_AuthenticationRequired ? "Login and try again\n" : "Not authorized\n"); // ??
+            }
 #endif
 
-            ok = webui_command_handler(atol(cmd), args) == Status_OK;
+            if(argc > 1 && argv)
+                free(argv);
         }
 
         fs_close(file);
@@ -565,334 +622,6 @@ bool is_authorized (http_request_t *req, webui_auth_level_t min_level)
 
 #if WEBUI_AUTH_ENABLE
 
-static ip_addr_t *get_ipaddress (http_request_t *request)
-{
-    return &((http_state_t *)(request->handle))->pcb->remote_ip;
-}
-
-static webui_auth_level_t check_authenticated (ip_addr_t *ip, const session_id_t *session_id)
-{
-    webui_auth_t *current = sessions, *previous = NULL;
-    uint32_t now = hal.get_elapsed_ticks();
-
-    webui_auth_level_t level = WebUIAuth_Guest;
-
-    while(current) {
-        if(now - current->last_access > 360000) {
-            if(current == sessions) {
-                sessions = current->next;
-                free(current);
-                current = sessions;
-            } else {
-                previous->next = current->next;
-                free(current);
-                current = previous->next;
-            }
-        } else {
-            if (memcmp(ip, &current->ip, sizeof(ip_addr_t)) == 0 && memcmp(session_id, current->session_id, sizeof(session_id_t)) == 0) {
-                current->last_access = now;
-                level = current->level;
-            }
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    return level;
-}
-
-static session_id_t *create_session_id (ip_addr_t *ip, uint16_t port)
-{
-    static session_id_t session_id;
-
-    uint32_t addr;
-
-    memcpy(&addr, ip, sizeof(ip_addr_t));
-
-    if(sprintf(session_id, "%08X%04X%08X", addr, port, hal.get_elapsed_ticks()) != 20)
-        memset(session_id, 0, sizeof(session_id_t));
-
-    return &session_id;
-}
-
-static session_id_t *get_session_id (http_request_t *req, session_id_t *session_id)
-{
-    char *cookie = NULL, *token = NULL, *end = NULL;;
-    int len = http_get_header_value_len(req, "Cookie");
-
-    if(len > 0 && (cookie = malloc(len + 1))) {
-
-        http_get_header_value(req, "Cookie", cookie, len + 1);
-
-        if((token = strstr(cookie, COOKIEPREFIX))) {
-            token += strlen(COOKIEPREFIX);
-            if((end = strchr(token, ';')))
-                *end = '\0';
-            if(strlen(token) == sizeof(session_id_t) - 1)
-                strcpy((char *)session_id, token);
-            else
-                token = NULL;
-        }
-
-        free(cookie);
-    }
-
-    return token ? session_id : NULL;
-}
-
-static bool unlink_session (http_request_t *req)
-{
-    bool ok = false;
-    session_id_t session_id;
-
-    if(get_session_id(req, &session_id)) {
-
-        webui_auth_t *current = sessions, *previous = NULL;
-
-        while(current) {
-
-            if(memcmp(session_id, current->session_id, sizeof(session_id_t)) == 0) {
-                ok = true;
-                if(current == sessions) {
-                    sessions = current->next;
-                    free(current);
-                    current = NULL;
-                } else {
-                    previous->next = current->next;
-                    free(current);
-                    current = NULL;
-                }
-            } else {
-                previous = current;
-                current = current->next;
-            }
-        }
-    }
-
-    return ok;
-}
-
-static webui_auth_level_t get_auth_level (http_request_t *req)
-{
-    session_id_t session_id;
-    webui_auth_level_t auth_level = WebUIAuth_None;
-
-    if(get_session_id(req, &session_id))
-        auth_level = check_authenticated(get_ipaddress(req), &session_id);
-
-    return auth_level;
-}
-
-#endif
-
-static char *authleveltostr (webui_auth_level_t level)
-{
-    return level == WebUIAuth_None ? "???" : level == WebUIAuth_Guest ? "guest" : level == WebUIAuth_User ? "user" : "admin";
-}
-
-static const char *login_handler (http_request_t *request)
-{
-    bool ok = false;
-    char msg[40] = "Ok";
-    webui_auth_level_t auth_level = WebUIAuth_None;
-
-#if WEBUI_AUTH_ENABLE
-
-    user_id_t user;
-    password_t password;
-    char cookie[64];
-    uint32_t status = 200;
-
-    if(http_get_param_count(request)) {
-
-        if(http_get_param_value(request, "DISCONNECT", password, sizeof(password))) {
-            unlink_session(request);
-            auth_level = WebUIAuth_None;
-            http_set_response_header(request, "Set-Cookie", strcat(strcpy(cookie, COOKIEPREFIX), "; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"));
-
-        } else if(http_get_param_value(request, "SUBMIT", password, sizeof(password))) {
-
-             if(http_get_param_value(request, "NEWPASSWORD", password, sizeof(password))) {
-
-                strcpy(user, authleveltostr((auth_level = get_auth_level(request))));
-
-                // TODO: validation against original password needed?
-
-                if(*user && is_valid_password(password)) {
-
-                    switch(strlookup(user, "user,admin", ',')) {
-
-                        case 0:
-                            if(settings_store_setting(Setting_UserPassword, password) != Status_OK) {
-                                status = 401;
-                                strcpy(msg, "Error: Cannot apply changes");
-                            }
-                            break;
-
-                        case 1:
-    //                                ESP_LOGI("newp", "admin");
-                            if(settings_store_setting(Setting_AdminPassword, password) != Status_OK) {
-    //                                    ESP_LOGI("newp", "admin failed");
-                                status = 401;
-                                strcpy(msg, "Error: Cannot apply changes");
-                            }
-                            break;
-
-                        default:
-                            status = 401;
-                            strcpy(msg, "Wrong authentication!");
-                            break;
-                    }
-                } else {
-                    status = 500;
-                    strcpy(msg, "Error: Incorrect password");
-                }
-
-            } else {
-
-                http_get_param_value(request, "USER", user, sizeof(user));
-                http_get_param_value(request, "PASSWORD", password, sizeof(password));
-
-                if(*user) {
-
-                    auth_level = WebUIAuth_Guest;
-
-                    switch(strlookup(user, "user,admin", ',')) {
-
-                        case 0:
-                            if(strcmp(password, webui.user_password)) {
-                                status = 401;
-                                strcpy(msg, "Error: Incorrect password");
-                            } else
-                                auth_level = WebUIAuth_User;
-                            break;
-
-                        case 1:
-                            if(strcmp(password, webui.admin_password)) {
-                                status = 401;
-                                strcpy(msg, "Error: Incorrect password");
-                            } else
-                                auth_level = WebUIAuth_Admin;
-                            break;
-
-                        default:
-                            status = 401;
-                            strcpy(msg, "Error: Unknown user");
-                            break;
-                    }
-                } else {
-                    status = 500;
-                    strcpy(msg, "Error: Missing data");
-                }
-            }
-        } else {
-            status = 500;
-            strcpy(msg, "Error: Missing data");
-        }
-    }
-
-    http_set_response_header(request, "Cache-Control", "no-cache");
-
-    webui_auth_level_t current_level = get_auth_level(request);
-
-    if(auth_level != current_level) {
-
-        unlink_session(request);
-
-        if(auth_level != WebUIAuth_None) {
-
-            webui_auth_t *session;
-
-            if((session = malloc(sizeof(webui_auth_t)))) {
-                memset(session, 0, sizeof(webui_auth_t));
-                memcpy(&session->ip, get_ipaddress(request), sizeof(ip_addr_t));
-                memcpy(session->session_id, create_session_id(&session->ip, ((http_state_t *)(request->handle))->pcb->remote_port), sizeof(session_id_t));
-                session->level = auth_level;
-                strcpy(session->user_id, user);
-                session->last_access = hal.get_elapsed_ticks();
-                session->next = sessions;
-                sessions = session;
-            }
-
-            http_set_response_header(request, "Set-Cookie", strcat(strcat(strcpy(cookie, COOKIEPREFIX), session->session_id), "; path=/"));
-        }
-    }
-
-    if(status != 200) {
-        char paranoia[50];
-        sprintf(paranoia, "%d %s", (int)status, msg);
-        http_set_response_status(request, paranoia);
-    }
-
-#endif
-
-    cJSON *root;
-
-    if((root = cJSON_CreateObject())) {
-
-        ok = cJSON_AddStringToObject(root, "status", msg) != NULL;
-        ok &= cJSON_AddStringToObject(root, "authentication_lvl", authleveltostr(auth_level)) != NULL;
-
-        if(ok) {
-            char *resp = cJSON_PrintUnformatted(root);
-            struct fs_file *file = fs_create();
-            hal.stream.write(resp);
-            fs_close(file);
-            free(resp);
-        }
-
-        if(root)
-            cJSON_Delete(root);
-    }
-
-    return ok ? "cgi:qry.json" : NULL;
-}
-
-#if WEBUI_AUTH_ENABLE
-
-static const setting_detail_t webui_settings[] = {
-
-    { Setting_AdminPassword, Group_General, "Admin Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.admin_password, NULL, NULL },
-    { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.user_password, NULL, NULL },
-};
-
-static void webui_settings_save (void)
-{
-    hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
-}
-
-static setting_details_t details = {
-//    .groups = webui_groups,
-//    .n_groups = sizeof(webui_groups) / sizeof(setting_group_detail_t),
-    .settings = webui_settings,
-    .n_settings = sizeof(webui_settings) / sizeof(setting_detail_t),
-#ifndef NO_SETTINGS_DESCRIPTIONS
-//    .descriptions = ethernet_settings_descr,
-//    .n_descriptions = sizeof(ethernet_settings_descr) / sizeof(setting_descr_t),
-#endif
-    .save = webui_settings_save,
-    .load = webui_settings_load,
-    .restore = webui_settings_restore
-};
-
-static void webui_settings_restore (void)
-{
-    memset(&webui, 0, sizeof(webui_settings_t));
-
-    hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
-}
-
-static void webui_settings_load (void)
-{
-    if(hal.nvs.memcpy_from_nvs((uint8_t *)&webui, nvs_address, sizeof(webui_settings_t), true) != NVS_TransferResult_OK)
-        webui_settings_restore();
-}
-
-static setting_details_t *on_get_settings (void)
-{
-    return &details;
-}
-
 #endif
 
 
@@ -911,7 +640,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.03]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.04]" ASCII_EOL);
 }
 
 static bool webui_setup (settings_t *settings)
@@ -924,13 +653,39 @@ static bool webui_setup (settings_t *settings)
     return ok;
 }
 
+#if !WEBUI_AUTH_ENABLE
+
+static const char *login_handler_get (http_request_t *request)
+{
+    bool ok = false;
+    cJSON *root;
+
+    if((root = cJSON_CreateObject())) {
+
+        ok = cJSON_AddStringToObject(root, "status", "ok") != NULL;
+        ok &= cJSON_AddStringToObject(root, "authentication_lvl", "admin") != NULL;
+
+        if(ok) {
+            char *resp = cJSON_PrintUnformatted(root);
+            struct fs_file *file = fs_create();
+            hal.stream.write(resp);
+            fs_close(file);
+            free(resp);
+        }
+
+        if(root)
+            cJSON_Delete(root);
+    }
+
+    return ok ? "cgi:qry.json" : NULL;
+}
+
+#endif
+
 void webui_init (void)
 {
 #if WEBUI_AUTH_ENABLE
-    if((nvs_address = nvs_alloc(sizeof(webui_settings_t)))) {
-        details.on_get_settings = grbl.on_get_settings;
-        grbl.on_get_settings = on_get_settings;
-    }
+    login_init();
 #endif
 
     driver_setup = hal.driver_setup;
@@ -951,7 +706,10 @@ void webui_init (void)
         { .uri = "/sdfiles",  .method =  HTTP_Get,  .handler = sdcard_handler },
         { .uri = "/SD/*",     .method =  HTTP_Get,  .handler = sdcard_download_handler },
         { .uri = "/sdcard/*", .method =  HTTP_Get,  .handler = sdcard_download_handler },
-        { .uri = "/login",    .method =  HTTP_Get,  .handler = login_handler },
+        { .uri = "/login",    .method =  HTTP_Get,  .handler = login_handler_get },
+#if WEBUI_AUTH_ENABLE
+        { .uri = "/login",    .method =  HTTP_Post, .handler = login_handler_post },
+#endif
         { .uri = "/upload",   .method =  HTTP_Post, .handler = sdcard_upload_handler },
         { .uri = "/sdfiles",  .method =  HTTP_Post, .handler = sdcard_upload_handler },
         { .uri = "/files",    .method =  HTTP_Post, .handler = spiffs_upload_handler }

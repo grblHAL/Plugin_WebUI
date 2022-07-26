@@ -36,7 +36,6 @@ typedef enum {
 typedef char session_id_t[21];
 typedef char user_id_t[17];
 
-
 /*
 esp_err_t webui_http_command_handler (httpd_req_t *req);
 esp_err_t webui_sdcard_handler (httpd_req_t *req);

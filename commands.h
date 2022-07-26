@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019 Terje Io
+  Copyright (c) 2019-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,6 @@
 #include "server.h"
 #include "grbl/grbl.h"
 
-status_code_t webui_command_handler (uint32_t command, char *args);
-webui_auth_level_t get_auth_required (uint32_t command, char *args);
+status_code_t webui_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level);
 
 #endif
