@@ -331,7 +331,6 @@ static const char *login (login_form_data_t *login)
 }
 
 static const setting_detail_t webui_settings[] = {
-
     { Setting_AdminPassword, Group_General, "Admin Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.admin_password, NULL, NULL },
     { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.user_password, NULL, NULL },
 };
@@ -368,17 +367,10 @@ static void webui_settings_load (void)
         webui_settings_restore();
 }
 
-static void do_cleanup (login_form_data_t *upload)
+static void cleanup (void *form)
 {
-
-}
-
-static void cleanup (void *upload)
-{
-    if(upload) {
-        do_cleanup((login_form_data_t *)upload);
-        free(upload);
-    }
+    if(form)
+        free(form);
 }
 
 static int on_body_begin (struct multipartparser *parser)
@@ -388,51 +380,62 @@ static int on_body_begin (struct multipartparser *parser)
 
 static int on_part_begin (struct multipartparser *parser)
 {
+    login_form_data_t *form = (login_form_data_t *)parser->data;
+
+    *form->header_name = '\0';
+    *form->header_value = '\0';
+
     return 0;
 }
 
 static void on_header_done (struct multipartparser *parser)
 {
-    login_form_data_t *upload = (login_form_data_t *)parser->data;
+    login_form_data_t *form = (login_form_data_t *)parser->data;
 
-    if(*upload->header_value) {
+    if(*form->header_value) {
 
-        if(!strncmp(upload->header_name, "Content-Disposition", strlen("Content-Disposition"))) {
+        if(!strcmp(form->header_name, "Content-Disposition")) {
 
-            if(strstr(upload->header_value, "name=\"DISCONNECT\"")) {
-                upload->state = Login_GetAction;
-                upload->action = LoginAction_Disconnect;
-                *upload->action_param = '\0';
-            } else if(strstr(upload->header_value, "name=\"PASSWORD\"")) {
-                upload->state = Login_GetPassword;
-                upload->action = LoginAction_Submit;
-                *upload->password = '\0';
-            } else if(strstr(upload->header_value, "name=\"USER\"")) {
-                upload->state = Login_GetUserName;
-                upload->action = LoginAction_Submit;
-//                *upload->user = '\0';
-            } else if(strstr(upload->header_value, "name=\"SUBMIT\"")) {
-                upload->state = Login_GetAction;
-                upload->action = LoginAction_Submit;
-                *upload->action_param = '\0';
+            if(strstr(form->header_value, "name=\"DISCONNECT\"")) {
+                form->state = Login_GetAction;
+                form->action = LoginAction_Disconnect;
+                *form->action_param = '\0';
+            } else if(strstr(form->header_value, "name=\"PASSWORD\"")) {
+                form->state = Login_GetPassword;
+                form->action = LoginAction_Submit;
+                *form->password = '\0';
+            } else if(strstr(form->header_value, "name=\"USER\"")) {
+                form->state = Login_GetUserName;
+                form->action = LoginAction_Submit;
+                *form->user = '\0';
+            } else if(strstr(form->header_value, "name=\"SUBMIT\"")) {
+                form->state = Login_GetAction;
+                form->action = LoginAction_Submit;
+                *form->action_param = '\0';
             }
         }
     }
 }
 
-static int on_header_field (struct multipartparser *parser, const char* data, size_t size)
+static int on_header_field (struct multipartparser *parser, const char *data, size_t size)
 {
-    if (*((login_form_data_t *)parser->data)->header_value)
+    login_form_data_t *form = (login_form_data_t *)parser->data;
+
+    if (*form->header_value)
         on_header_done(parser);
 
-    strncat(((login_form_data_t *)parser->data)->header_name, data, size);
+    if(strlen(form->header_name) + size - 1 < sizeof(form->header_name))
+        strncat(form->header_name, data, size);
 
     return 0;
 }
 
-static int on_header_value (struct multipartparser *parser, const char* data, size_t size)
+static int on_header_value (struct multipartparser *parser, const char *data, size_t size)
 {
-    strncat(((login_form_data_t *)parser->data)->header_value, data, size);
+    login_form_data_t *form = (login_form_data_t *)parser->data;
+
+    if(strlen(form->header_value) + size - 1 < sizeof(form->header_value))
+        strncat(form->header_value, data, size);
 
     return 0;
 }
@@ -445,22 +448,25 @@ static int on_headers_complete (struct multipartparser *parser)
     return 0;
 }
 
-static int on_data (struct multipartparser *parser, const char* data, size_t size)
+static int on_data (struct multipartparser *parser, const char *data, size_t size)
 {
-    login_form_data_t *upload = (login_form_data_t *)parser->data;
+    login_form_data_t *form = (login_form_data_t *)parser->data;
 
-    switch(upload->state) {
+    switch(form->state) {
 
         case Login_GetAction:
-            strncat(upload->action_param, data, size);
+            if(strlen(form->action_param) + size - 1 < sizeof(form->action_param))
+                strncat(form->action_param, data, size);
             break;
 
         case Login_GetUserName:
-            strncat(upload->user, data, size);
+            if(strlen(form->user) + size - 1 < sizeof(form->user))
+                strncat(form->user, data, size);
             break;
 
         case Login_GetPassword:
-            strncat(upload->password, data, size);
+            if(strlen(form->password) + size - 1 < sizeof(form->password))
+                strncat(form->password, data, size);
             break;
 
         default:
@@ -472,19 +478,19 @@ static int on_data (struct multipartparser *parser, const char* data, size_t siz
 
 static int on_part_end (struct multipartparser *parser)
 {
-    login_form_data_t *upload = (login_form_data_t *)parser->data;
+    login_form_data_t *form = (login_form_data_t *)parser->data;
 
-    switch(upload->state) {
+    switch(form->state) {
 
         case Login_Failed:
-            do_cleanup(upload);
+            cleanup(form);
             break;
 
         default:
             break;
     }
 
-    upload->state = Login_Parsing;
+    form->state = Login_Parsing;
 
     return 0;
 }
@@ -531,7 +537,7 @@ static bool login_start (http_request_t *request, const char *boundary)
     return parser.data != NULL;
 }
 
-static size_t login_add_chunk (http_request_t *req, const char* data, size_t size)
+static size_t login_add_chunk (http_request_t *req, const char *data, size_t size)
 {
     return multipartparser_execute(&parser, login_callbacks, data, size);
 }

@@ -29,6 +29,7 @@
 
 #include "server.h"
 
+#include "../grbl/plugins.h"
 #include "../networking/httpd.h"
 
 typedef enum
@@ -52,12 +53,12 @@ typedef enum
 typedef struct {
     login_parse_state_t state;
     char header_name[100];
-    char header_value[100];
+    char header_value[50];
     login_action_t action;
     char action_param[20];
     char user[50];
-    char password[33];
-    char new_password[33];
+    password_t password;
+    password_t new_password;
     http_request_t *request;
 } login_form_data_t;
 

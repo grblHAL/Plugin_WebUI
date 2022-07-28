@@ -160,15 +160,14 @@ static const webui_cmd_binding_t webui_commands[] = {
     { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
     { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
 #if WIFI_ENABLE
-    { 410, get_ap_list,        { WebUIAuth_User, WebUIAuth_Admin},  "<json=yes> - display available AP list (limited to 30) in plain/JSON" },
+    { 410, get_ap_list,        { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display available AP list (limited to 30) in plain/JSON" },
 #endif
     { 420, get_system_status,  { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display ESP3D current status in plain/JSON" },
     { 444, set_cpu_state,      { WebUIAuth_Admin, WebUIAuth_Admin}, "<RESET|RESTART> - set ESP3D state" },
-    { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control ESP700 stream" },
 #if FLASHFS_ENABLE
     { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
 #endif
-    { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control ESP700 stream" },
+    { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control current job" },
 #if FLASHFS_ENABLE
     { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format local filesystem" },
     { 720, flash_get_capacity, { WebUIAuth_User, WebUIAuth_Admin},  "??" },
