@@ -47,6 +47,10 @@
 //#include "esp_vfs_fat.h"
 #endif
 
+#if WIFI_ENABLE
+#include "wifi.h"
+#endif
+
 //#include "flashfs.h"
 
 #ifndef LINE_BUFFER_SIZE
@@ -178,9 +182,11 @@ static const webui_cmd_binding_t webui_commands[] = {
 static char *get_arg (uint_fast16_t argc, char **argv, char *arg)
 {
     char *value = NULL;
-    size_t len = strlen(arg);
+    size_t len = arg ? strlen(arg) : 0;
 
-    if(argc && len) do {
+    if(arg == NULL)
+        value = argc ? *argv : NULL;
+    else if(argc && len) do {
 
         if(!strncmp(argv[--argc], arg, len))
             value = argv[argc] + len;
@@ -196,7 +202,7 @@ static bool get_bool_arg (uint_fast16_t argc, char **argv, char *arg)
 
     if(value)
         strcaps(value);
-    else {
+    else if(argc) {
         char tmp[16];
         memset(tmp, 0, sizeof(tmp));
         if(get_arg(argc, argv, strncpy(tmp, arg, strlen(arg) - 1)))
@@ -212,7 +218,7 @@ static void trim_arg (uint_fast16_t *argc, char **argv, char *arg)
     size_t len = strlen(arg);
     uint_fast16_t i = 0;
 
-    if(argc) do {
+    if(*argc) do {
         if(!strncmp(argv[i], arg, len))
             found = argv[i];
         else
@@ -1092,7 +1098,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
             ok &= !!cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port));
             ok &= !!cJSON_AddStringToObject(data, "Hostname", network->status.hostname);
             ok &= !!cJSON_AddStringToObject(data, "WebUpdate", "Disabled");
-            ok &= !!cJSON_AddStringToObject(data, "FileSystem", "directsd");
+            ok &= !!cJSON_AddStringToObject(data, "FileSystem", "none");
             ok &= !!cJSON_AddStringToObject(data, "Time", "none");
 
             json_write_response(root);
@@ -1215,8 +1221,8 @@ static status_code_t get_sd_content (const struct webui_cmd_binding *command, ui
 static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3)
 {
     char response[50];
-
     status_code_t status = Status_IdleError;
+
     if(hal.stream.type != StreamType_SDCard) { // Already streaming a file?
         char *cmd = get_arg(argc, argv, NULL);
         if(strlen(cmd) > 0) {
@@ -1225,6 +1231,7 @@ static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fas
             status = sys_execute(response);
         }
     }
+
     hal.stream.write(status == Status_OK ? "ok" : "error:cannot stream file");
 
     return status;
