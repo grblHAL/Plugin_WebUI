@@ -58,8 +58,8 @@
 #endif
 
 #define WEBUI_EOL "\n"
-#define FIRMWARE_ID "10"
-#define FIRMWARE_TARGET "grbl"
+#define FIRMWARE_ID "80"
+#define FIRMWARE_TARGET "grblHAL"
 
 static bool client_isv3 = false; // TODO: bind to connection (client ip/port)!
 
@@ -1097,6 +1097,13 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
             ok &= !!cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip);
             ok &= !!cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port));
             ok &= !!cJSON_AddStringToObject(data, "Hostname", network->status.hostname);
+#if WIFI_ENABLE
+  #if WIFI_SOFTAP
+            ok &= !!cJSON_AddStringToObject(data, "WiFiMode", "AP");
+  #else
+            ok &= !!cJSON_AddStringToObject(data, "WiFiMode", "STA");
+  #endif
+#endif
             ok &= !!cJSON_AddStringToObject(data, "WebUpdate", "Disabled");
             ok &= !!cJSON_AddStringToObject(data, "FileSystem", "none");
             ok &= !!cJSON_AddStringToObject(data, "Time", "none");
