@@ -1,11 +1,11 @@
 /*
-  webui/server.h - An embedded CNC Controller with rs274/ngc (g-code) support
+  webui/webui.h - An embedded CNC Controller with rs274/ngc (g-code) support
 
   WebUI backend for https://github.com/luc-github/ESP3D-webui
 
   Part of grblHAL
 
-  Copyright (c) 2019 Terje Io
+  Copyright (c) 2019-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,8 +21,8 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __WEBUI_SERVER_H__
-#define __WEBUI_SERVER_H__
+#ifndef __WEBUI_H__
+#define __WEBUI_H__
 
 #define COOKIEPREFIX "ESPSESSIONID="
 
@@ -36,14 +36,4 @@ typedef enum {
 typedef char session_id_t[21];
 typedef char user_id_t[17];
 
-/*
-esp_err_t webui_http_command_handler (httpd_req_t *req);
-esp_err_t webui_sdcard_handler (httpd_req_t *req);
-esp_err_t webui_sdcard_upload_handler (httpd_req_t *req);
-esp_err_t webui_spiffs_handler (httpd_req_t *req);
-esp_err_t webui_spiffs_upload_handler (httpd_req_t *req);
-esp_err_t webui_login_handler (httpd_req_t *req);
-esp_err_t webui_index_html_get_handler (httpd_req_t *req);
-*/
 #endif
-

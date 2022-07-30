@@ -24,7 +24,8 @@
 #ifndef __WEBUI_COMMANDS_H__
 #define __WEBUI_COMMANDS_H__
 
-#include "server.h"
+#include "webui.h"
+
 #include "grbl/grbl.h"
 
 status_code_t webui_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level);

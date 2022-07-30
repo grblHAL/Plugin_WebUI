@@ -27,10 +27,16 @@
 #ifndef __WEBUI_LOGIN_H__
 #define __WEBUI_LOGIN_H__
 
-#include "server.h"
-
 #include "../grbl/plugins.h"
+#include "webui.h"
+#ifdef ESP_PLATFORM
+#include <sys/socket.h>
+#include <esp_http_server.h>
+typedef httpd_req_t http_request_t;
+//typedef struct sockaddr_in6 ip_addr_t;
+#else
 #include "../networking/httpd.h"
+#endif
 
 typedef enum
 {
@@ -64,8 +70,13 @@ typedef struct {
 
 void login_init (void);
 webui_auth_level_t get_auth_level (http_request_t *request);
+#ifdef ESP_PLATFORM
+esp_err_t login_handler_get (httpd_req_t *request);
+esp_err_t login_handler_post (httpd_req_t *request);
+#else
 const char *login_handler_get (http_request_t *request);
 const char *login_handler_post (http_request_t *request);
+#endif
 
 #endif
 

@@ -37,7 +37,7 @@
 #include "../networking/strutils.h"
 #include "../networking/cJSON.h"
 
-#include "server.h"
+#include "webui.h"
 
 #include "grbl/report.h"
 #include "grbl/state_machine.h"
@@ -1139,7 +1139,8 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
             hal.stream.write("WiFi mode:STA" WEBUI_EOL);
   #endif
 #endif
-            hal.stream.write("File system:directsd" WEBUI_EOL);
+            hal.stream.write("File system:none" WEBUI_EOL);
+            hal.stream.write("Time:none" WEBUI_EOL);
 
         } else {
 

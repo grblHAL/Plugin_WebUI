@@ -44,7 +44,33 @@
 #include "../networking/utils.h"
 #include "../networking/strutils.h"
 
-#include "login.h"
+#include "./login.h"
+
+#ifdef ESP_PLATFORM
+
+#include <sys/socket.h>
+
+#include "../web/backend.h"
+#include "../esp_webui/server.h"
+
+#define http_get_header_value_len(a,b) httpd_req_get_hdr_value_len(a,b)
+#define http_get_header_value(a,b,c,d) httpd_req_get_hdr_value_str(a,b,c,d)
+#define http_get_param_value_len(a,b,c,d) http_get_key_value(a,b,c,d)
+#define http_set_response_header(a,b,c) httpd_resp_set_hdr(a,b,c)
+#define http_set_response_status(a, b) httpd_resp_set_status(a,b)
+
+static struct sockaddr_in6 *get_ipaddress (httpd_req_t *req)
+{
+    static struct sockaddr_in6 addr;   // esp_http_server uses IPv6 addressing
+    socklen_t addr_size = sizeof(struct sockaddr_in6);
+
+    if(getpeername(httpd_req_to_sockfd(req), (struct sockaddr *)&addr, &addr_size) != 0)
+        memset(&addr, 0, sizeof(struct sockaddr_in6));
+
+    return &addr;
+}
+
+#endif
 
 extern struct fs_file *fs_create (void);
 
@@ -55,7 +81,11 @@ typedef struct {
 
 typedef struct webui_auth {
     webui_auth_level_t level;
+#ifdef ESP_PLATFORM
+    struct sockaddr_in6 ip;
+#else
     ip_addr_t ip;
+#endif
     user_id_t user_id;
     session_id_t session_id;
     uint32_t last_access;
@@ -67,48 +97,25 @@ static webui_settings_t webui;
 static nvs_address_t nvs_address;
 static void webui_settings_restore (void);
 static void webui_settings_load (void);
-bool is_authorized (http_request_t *req, webui_auth_level_t min_level);
+
 static struct multipartparser parser;
 static struct multipartparser_callbacks *login_callbacks = NULL;
 
-static webui_auth_level_t check_authenticated (ip_addr_t ip, const session_id_t *session_id)
-{
-    webui_auth_t *current = sessions, *previous = NULL;
-    uint32_t now = hal.get_elapsed_ticks();
-
-    webui_auth_level_t level = WebUIAuth_Guest;
-
-    while(current) {
-        if(now - current->last_access > 360000) {
-            if(current == sessions) {
-                sessions = current->next;
-                free(current);
-                current = sessions;
-            } else {
-                previous->next = current->next;
-                free(current);
-                current = previous->next;
-            }
-        } else {
-            if (memcmp(&ip, &current->ip, sizeof(ip_addr_t)) == 0 && memcmp(session_id, current->session_id, sizeof(session_id_t)) == 0) {
-                current->last_access = now;
-                level = current->level;
-            }
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    return level;
-}
-
+#ifdef ESP_PLATFORM
+static session_id_t *create_session_id (struct sockaddr_in6 *ip, uint16_t port)
+#else
 static session_id_t *create_session_id (ip_addr_t ip, uint16_t port)
+#endif
 {
     static session_id_t session_id;
 
     uint32_t addr;
 
+#ifdef ESP_PLATFORM
+    memcpy(&addr, &ip->sin6_addr.un.u32_addr[3], sizeof(uint32_t));
+#else
     memcpy(&addr, &ip, sizeof(ip_addr_t));
+#endif
 
     if(sprintf(session_id, "%08X%04X%08X", addr, port, hal.get_elapsed_ticks()) != 20)
         memset(session_id, 0, sizeof(session_id_t));
@@ -181,11 +188,10 @@ static char *authleveltostr (webui_auth_level_t level)
 static const char *login (login_form_data_t *login)
 {
     bool ok = true;
-    char msg[40] = "Ok";
+    char msg[40] = "Ok", cookie[64];
     uint32_t status = 200;
     webui_auth_level_t auth_level = WebUIAuth_None;
     cJSON *root;
-    char cookie[64];
 
     switch(login->action) {
 
@@ -295,10 +301,15 @@ static const char *login (login_form_data_t *login)
             webui_auth_t *session;
 
             if((session = malloc(sizeof(webui_auth_t)))) {
-                ip_addr_t ip = http_get_remote_ip(login->request);
                 memset(session, 0, sizeof(webui_auth_t));
+#ifdef ESP_PLATFORM
+                memcpy(&session->ip, get_ipaddress(login->request), sizeof(struct sockaddr_in6));
+                memcpy(&session->session_id, create_session_id(&session->ip, 0), sizeof(session_id_t));
+#else
+                ip_addr_t ip = http_get_remote_ip(login->request);
                 memcpy(&session->ip, &ip, sizeof(ip_addr_t));
                 memcpy(&session->session_id, create_session_id(session->ip, http_get_remote_port(login->request)), sizeof(session_id_t));
+#endif
                 session->level = auth_level;
                 strcpy(session->user_id, login->user);
                 session->last_access = hal.get_elapsed_ticks();
@@ -317,9 +328,18 @@ static const char *login (login_form_data_t *login)
 
         if(ok) {
             char *resp = cJSON_PrintUnformatted(root);
+#ifdef ESP_PLATFORM
+            struct fs_file *file;
+            webui_set_http_request(login->request);
+            claim_output(&file);
+            data_is_json();
+            hal.stream.write(resp);
+            write_response(file);
+#else
             struct fs_file *file = fs_create();
             hal.stream.write(resp);
             fs_close(file);
+#endif
             free(resp);
         }
 
@@ -542,6 +562,128 @@ static size_t login_add_chunk (http_request_t *req, const char *data, size_t siz
     return multipartparser_execute(&parser, login_callbacks, data, size);
 }
 
+#ifdef ESP_PLATFORM
+
+static webui_auth_level_t check_authenticated (struct sockaddr_in6 *ip, const session_id_t *session_id)
+{
+    webui_auth_t *current = sessions, *previous = NULL;
+    TickType_t now = xTaskGetTickCount();
+
+    webui_auth_level_t level = WebUIAuth_Guest;
+
+    while(current) {
+        if(now - current->last_access > 360000) {
+            if(current == sessions) {
+                sessions = current->next;
+                free(current);
+                current = sessions;
+            } else {
+                previous->next = current->next;
+                free(current);
+                current = previous->next;
+            }
+        } else {
+            if (memcmp(ip, &current->ip, sizeof(struct sockaddr_in6)) == 0 && memcmp(session_id, current->session_id, sizeof(session_id_t)) == 0) {
+                current->last_access = now;
+                level = current->level;
+            }
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    return level;
+}
+
+webui_auth_level_t get_auth_level (httpd_req_t *req)
+{
+    session_id_t session_id;
+    webui_auth_level_t auth_level = WebUIAuth_None;
+
+    if(get_session_id(req, &session_id))
+        auth_level = check_authenticated(get_ipaddress(req), &session_id);
+
+    return auth_level;
+}
+
+esp_err_t login_handler_post (httpd_req_t *req)
+{
+    bool ok = false;
+    int ret;
+
+    char *rqhdr = NULL, *boundary;
+    size_t len = httpd_req_get_hdr_value_len(req, "Content-Type");
+
+    if(len) {
+        rqhdr = malloc(len + 1);
+        httpd_req_get_hdr_value_str(req, "Content-Type", rqhdr, len + 1);
+
+        if((ok = (boundary = strstr(rqhdr, "boundary=")))) {
+            boundary += strlen("boundary=");
+            ok = login_start(req, boundary);
+        }
+    }
+
+    char *scratch = ((file_server_data_t *)req->user_ctx)->scratch;
+    login_form_data_t *login_data = (login_form_data_t *)req->sess_ctx;
+
+    if (ok) do { // Process received data
+
+        if ((ret = httpd_req_recv(req, scratch, sizeof(fs_scratch_t))) < 0) {
+            ok = false;
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT)
+                httpd_resp_send_408(req);
+            break;
+        }
+
+        if(ret)
+        	login_add_chunk(req, scratch, (size_t)ret);
+
+    } while(ret > 0 && login_data->state != Login_Complete);
+
+    ok = login(login_data) != NULL;
+
+    if(req->sess_ctx && req->free_ctx) {
+        req->free_ctx(req->sess_ctx);
+        req->sess_ctx = NULL;
+    }
+
+    if(rqhdr)
+        free(rqhdr);
+
+    return ok ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t login_handler_get (httpd_req_t *request)
+{
+    char tmp[30], *query = NULL;
+    login_form_data_t login_data = {0};
+    size_t qlen = httpd_req_get_url_query_len(request);
+
+    login_data.request = request;
+
+    if(qlen && (query = malloc(qlen + 1))) {
+
+        httpd_req_get_url_query_str(request, query, qlen);
+
+        if(http_get_key_value(query, "DISCONNECT", tmp, sizeof(tmp)))
+            login_data.action = LoginAction_Disconnect;
+        else if(http_get_key_value(query, "SUBMIT", tmp, sizeof(tmp))) {
+            login_data.action = LoginAction_Submit;
+            if(!http_get_key_value(query, "NEWPASSWORD", login_data.new_password, sizeof(login_data.new_password))) {
+                http_get_key_value(query, "USER", login_data.user, sizeof(login_data.user));
+                http_get_key_value(query, "PASSWORD", login_data.password, sizeof(login_data.password));
+            }
+        }
+
+        free(query);
+    }
+
+    return login(&login_data) ? ESP_OK : ESP_FAIL;
+}
+
+#else
+
 static err_t login_post_receive_data (http_request_t *request, struct pbuf *p)
 {
     struct pbuf *q = p;
@@ -573,7 +715,36 @@ static void login_post_finished (http_request_t *request, char *response_uri, u1
     strcpy(response_uri, "cgi:qry.json");
 }
 
-//
+static webui_auth_level_t check_authenticated (ip_addr_t ip, const session_id_t *session_id)
+{
+    webui_auth_t *current = sessions, *previous = NULL;
+    uint32_t now = hal.get_elapsed_ticks();
+
+    webui_auth_level_t level = WebUIAuth_Guest;
+
+    while(current) {
+        if(now - current->last_access > 360000) {
+            if(current == sessions) {
+                sessions = current->next;
+                free(current);
+                current = sessions;
+            } else {
+                previous->next = current->next;
+                free(current);
+                current = previous->next;
+            }
+        } else {
+            if (memcmp(&ip, &current->ip, sizeof(ip_addr_t)) == 0 && memcmp(session_id, current->session_id, sizeof(session_id_t)) == 0) {
+                current->last_access = now;
+                level = current->level;
+            }
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    return level;
+}
 
 webui_auth_level_t get_auth_level (http_request_t *req)
 {
@@ -628,6 +799,8 @@ const char *login_handler_get (http_request_t *request)
 
     return login(&login_data);
 }
+
+#endif // WEBUI_ENABLE && WEBUI_AUTH_ENABLE
 
 void login_init (void)
 {

@@ -27,7 +27,7 @@
 #include "driver.h"
 #endif
 
-#if WEBUI_ENABLE
+#if WEBUI_ENABLE && !defined(ESP_PLATFORM)
 
 #include <string.h>
 #include <stdint.h>
@@ -41,7 +41,11 @@
 #include "../networking/strutils.h"
 #include "../networking/cJSON.h"
 #include "../networking/http_upload.h"
+
+#if SDCARD_ENABLE
+#include "./sdcard.h"
 #include "../sdcard/sdcard.h"
+#endif
 
 #include "commands.h"
 
@@ -55,8 +59,7 @@
 extern struct fs_file *fs_create (void);
 extern int fs_bytes_left (struct fs_file *file);
 extern void fs_register_embedded_files (const embedded_file_t **files);
-
-void fs_reset (void);
+extern void fs_reset (void);
 
 static bool file_is_json = false;
 static driver_setup_ptr driver_setup;
@@ -251,331 +254,7 @@ static const char *command (http_request_t *request)
     return file_is_json ? "cgi:qry.json" : "cgi:qry.txt";
 }
 
-#if SDCARD_ENABLE
-
-// add file to the JSON response array
-static bool add_file (cJSON *files, char *path, FILINFO *file)
-{
-    bool ok;
-
-    cJSON *fileinfo;
-
-    if((ok = (fileinfo = cJSON_CreateObject()) != NULL))
-    {
-        ok = cJSON_AddStringToObject(fileinfo, "name", file->fname) != NULL;
-        ok &= cJSON_AddStringToObject(fileinfo, "shortname", file->fname) != NULL;
-        ok &= cJSON_AddStringToObject(fileinfo, "datetime", "") != NULL;
-        if(file->fattrib & AM_DIR)
-            ok &= cJSON_AddNumberToObject(fileinfo, "size", -1.0) != NULL;
-        else
-            ok &= cJSON_AddStringToObject(fileinfo, "size", btoa(file->fsize)) != NULL;
-    }
-
-    return ok && cJSON_AddItemToArray(files, fileinfo);
-}
-
-static FRESULT sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
-{
-#if defined(ESP_PLATFORM)
-    FF_DIR dir;
-#else
-    DIR dir;
-#endif
-    FILINFO fno;
-    FRESULT res;
-    bool subdirs = false;
-#if _USE_LFN
-    static TCHAR lfn[_MAX_LFN + 1];   /* Buffer to store the LFN */
-    fno.lfname = lfn;
-    fno.lfsize = sizeof(lfn);
-#endif
-
-   if((res = f_opendir(&dir, path)) != FR_OK)
-        return res;
-
-   // Pass 1: Scan files
-    while(true) {
-
-        if((res = f_readdir(&dir, &fno)) != FR_OK || fno.fname[0] == '\0')
-            break;
-
-        subdirs |= fno.fattrib & AM_DIR;
-
-        if(!(fno.fattrib & AM_DIR))
-            add_file(files, path, &fno);
-    }
-
-    if((subdirs = (subdirs && depth)))
-        f_readdir(&dir, NULL); // Rewind
-
-    // Pass 2: Scan directories
-    while(subdirs) {
-
-        if((res = f_readdir(&dir, &fno)) != FR_OK || *fno.fname == '\0')
-            break;
-
-        if((fno.fattrib & AM_DIR) && strcmp(fno.fname, "System Volume Information")) {
-
-            size_t pathlen = strlen(path);
-//          if(pathlen + strlen(get_name(&fno)) > (MAX_PATHLEN - 1))
-                //break;
-            add_file(files, path, &fno);
-            if(depth > 1) {
-                sprintf(&path[pathlen], "/%s", fno.fname);
-                if((res = sd_scan_dir(files, path, depth - 1)) != FR_OK)
-                    break;
-                path[pathlen] = '\0';
-            }
-        }
-    }
-
-#if defined(__MSP432E401Y__) || defined(ESP_PLATFORM)
-    f_closedir(&dir);
-#endif
-
-    return res;
-}
-
-static bool sd_ls (void *request, char *path, char *status)
-{
-    bool ok;
-    uint_fast16_t pathlen = strlen(path);
-    cJSON *root = cJSON_CreateObject(), *files = NULL;
-
-    if((ok = (root && (files = cJSON_AddArrayToObject(root, "files"))))) {
-
-        if(pathlen > 1 && path[pathlen - 1] == '/')
-            path[pathlen - 1] = '\0';
-
-        sd_scan_dir(files, path, 1);
-
-        cJSON_AddStringToObject(root, "path", path);
-
-        FATFS *fs;
-        DWORD fre_clust, used_sect, tot_sect;
-
-        if(f_getfree("", &fre_clust, &fs) == FR_OK) {
-            tot_sect = (fs->n_fatent - 2) * fs->csize;
-            used_sect = tot_sect - fre_clust * fs->csize;
-            uint32_t pct_used = (used_sect * 100) / tot_sect;
-            cJSON_AddStringToObject(root, "total", btoa(tot_sect << 9)); // assuming 512 byte sector size
-            cJSON_AddStringToObject(root, "used", btoa(used_sect << 9));
-            cJSON_AddStringToObject(root, "occupation", uitoa(pct_used == 0 ? 1 : pct_used));
-        }
-        cJSON_AddStringToObject(root, "mode", "direct");
-        cJSON_AddStringToObject(root, "status", status);
-
-        char *resp = cJSON_PrintUnformatted(root);
-
-        data_is_json();
-
-        hal.stream.write(resp);
-
-        free(resp);
-
-        http_set_response_header(request, "Cache-Control", "no-cache");
-    }
-
-    if(root)
-        cJSON_Delete(root);
-
-    return ok;
-}
-
-static bool sd_rmdir (char *path)
-{
-    bool ok = true;
-
-#if defined(ESP_PLATFORM)
-    FF_DIR dir;
-#else
-    DIR dir;
-#endif
-    FILINFO fno;
-
-#if _USE_LFN
-    static TCHAR lfn[_MAX_LFN + 1];   /* Buffer to store the LFN */
-    fno.lfname = lfn;
-    fno.lfsize = sizeof(lfn);
-#endif
-
-   if(f_opendir(&dir, path) != FR_OK)
-        return false;
-
-    size_t pathlen = strlen(path);
-
-    while(ok) {
-
-        if(f_readdir(&dir, &fno) != FR_OK || *fno.fname == '\0')
-            break;
-
-        strcat(strcat(path, "/"), fno.fname);
-
-        ok = ((fno.fattrib & AM_DIR) ? sd_rmdir(path) : f_unlink(path)) == FR_OK;
-
-        path[pathlen] = '\0';
-    }
-
-#if defined(__MSP432E401Y__) || defined(ESP_PLATFORM)
-    f_closedir(&dir);
-#endif
-
-    return ok && f_unlink(path) == FR_OK;
-}
-
-static const char *sdcard_handler (http_request_t *request)
-{
-    char path[100];
-    char filename[100], fullname[100];
-    char action[20], status[sizeof(filename) + 50];
-
-//    if(!is_authorized(request, WebUIAuth_User))
-//        return ESP_OK;
-
-    *status = '\0';
-    *path = '\0';
-
-    http_get_param_value(request, "path", path, sizeof(path));
-    http_get_param_value(request, "filename", filename, sizeof(filename));
-    http_get_param_value(request, "action", action, sizeof(action));
-
-    struct fs_file *file = fs_create();
-
-    if(*action && *filename) {
-
-        FILINFO file;
-        uint_fast16_t pathlen = strlen(path);
-
-        if(pathlen > 1 && path[pathlen - 1] != '/') {
-            path[pathlen] = '/';
-            path[pathlen + 1] = '\0';
-        }
-
-//        char *fullname = ((file_server_data_t *)req->user_ctx)->scratch;
-
-        strcat(strcpy(fullname, path), filename);
-
-        switch(strlookup(action, "delete,createdir,deletedir", ',')) {
-
-            case 0: // delete
-                if(f_stat(fullname, &file) == FR_OK) {
-                    if(!(file.fattrib & AM_DIR) && f_unlink(fullname) == FR_OK)
-                        sprintf(status, "%s deleted", filename);
-                    else
-                        sprintf(status, "Cannot delete %s!", filename);
-                } else
-                    sprintf(status, "%s does not exist!", filename);
-                break;
-
-            case 1: // createdir
-                if(f_stat(fullname, &file) != FR_OK) {
-                    if(f_mkdir(fullname) == FR_OK)
-                        sprintf(status, "%s created", filename);
-                    else
-                        sprintf(status, "Cannot create %s!", filename);
-                } else
-                    sprintf(status, "%s already exists!", filename);
-                break;
-
-            case 2: // deletedir
-                if(strlen(fullname) == 1)
-                    strcpy(status, "Cannot delete root directory!");
-                else if(f_stat(fullname, &file) == FR_OK) {
-                    if(sd_rmdir(fullname))
-                        sprintf(status, "%s deleted", filename);
-                    else
-                        sprintf(status, "Error deleting %s!", filename);
-                } else
-                    sprintf(status, "%s does not exist!", filename);
-                break;
-
-            default:
-                sprintf(status, "Invalid action \"%s\" for %s!", action, filename);
-                break;
-        }
-    }
-
-    if(*path == '\0')
-        strcpy(path, "/");
-
-    if(!sd_ls(request, path, status)) {
-        http_set_response_status(request, "500 Internal server error");
-        hal.stream.write("Failed to generate response");
-    }
-
-    fs_close(file);
-
-    return file_is_json ? "cgi:qry.json" : "cgi:qry.txt";
-}
-
-static const char *sdcard_download_handler (http_request_t *request)
-{
-    static char path[100];
-
-    strcpy(path, ":");
-    urldecode(path + 1, http_get_uri(request));
-
-    return path;
-}
-
-err_t sdcard_post_receive_data (http_request_t *request, struct pbuf *p)
-{
-    struct pbuf *q = p;
-
-    http_upload_chunk(request, p->payload, p->len);
-
-    while((q = q->next))
-        http_upload_chunk(request, q->payload, q->len);
-
-    httpd_free_pbuf(request, p);
-
-    return ERR_OK;
-}
-
-void sdcard_post_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
-{
-    struct fs_file *file = fs_create();
-
-    file_upload_t *upload = (file_upload_t *)request->private_data;
-
-    if(upload)
-        strncpy(response_uri, upload->path ? upload->path : "/", response_uri_len);
-
-    if(*response_uri == '\0')
-        strcpy(response_uri, "/");
-
-    sd_ls(request, response_uri, "ok");
-
-    fs_close(file);
-
-    if(request->on_request_completed) {
-        request->on_request_completed(request->private_data);
-        request->private_data = NULL;
-        request->on_request_completed = NULL;
-    }
-
-    strcpy(response_uri, "cgi:qry.json");
-}
-
-static const char *sdcard_upload_handler (http_request_t *request)
-{
-    int len;
-    bool ok;
-    char ct[200], *boundary;
-
-    if((len = http_get_header_value_len (request, "Content-Type")) >= 0) {
-        http_get_header_value (request, "Content-Type", ct, len);
-        if((ok = (boundary = strstr(ct, "boundary=")))) {
-            boundary += strlen("boundary=");
-            ok = http_upload_start(request, boundary, true);
-        }
-    }
-
-    request->post_receive_data = sdcard_post_receive_data;
-    request->post_finished = sdcard_post_finished;
-
-    return NULL;
-}
+#if WEBUI_INFLASH
 
 // Virtual spiffs
 
@@ -702,17 +381,21 @@ void webui_init (void)
 
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method =  HTTP_Get,  .handler = command },
+#if SDCARD_ENABLE
         { .uri = "/upload",   .method =  HTTP_Get,  .handler = sdcard_handler },
         { .uri = "/sdfiles",  .method =  HTTP_Get,  .handler = sdcard_handler },
         { .uri = "/SD/*",     .method =  HTTP_Get,  .handler = sdcard_download_handler },
         { .uri = "/sdcard/*", .method =  HTTP_Get,  .handler = sdcard_download_handler },
+        { .uri = "/upload",   .method =  HTTP_Post, .handler = sdcard_upload_handler },
+        { .uri = "/sdfiles",  .method =  HTTP_Post, .handler = sdcard_upload_handler },
+#endif
         { .uri = "/login",    .method =  HTTP_Get,  .handler = login_handler_get },
 #if WEBUI_AUTH_ENABLE
         { .uri = "/login",    .method =  HTTP_Post, .handler = login_handler_post },
 #endif
-        { .uri = "/upload",   .method =  HTTP_Post, .handler = sdcard_upload_handler },
-        { .uri = "/sdfiles",  .method =  HTTP_Post, .handler = sdcard_upload_handler },
+#if WEBUI_INFLASH
         { .uri = "/files",    .method =  HTTP_Post, .handler = spiffs_upload_handler }
+#endif
     };
 
     httpd_register_uri_handlers(cgi, sizeof(cgi) / sizeof(httpd_uri_handler_t));
@@ -722,4 +405,4 @@ void webui_init (void)
 #endif
 }
 
-#endif
+#endif // WEBUI_ENABLE
