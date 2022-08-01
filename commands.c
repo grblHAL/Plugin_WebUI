@@ -597,8 +597,8 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
 // Add setting to the JSON response array
 static bool add_setting (cJSON *settings, bool isv3, setting_id_t id, int32_t bit, uint_fast16_t offset)
 {
-    static const char *tmap2[] = { "B", "B", "B", "B", "I", "I", "B", "S", "B", "A", "I", "I" };
-    static const char *tmap3[] = { "T", "T", "T", "T", "I", "I", "B", "S", "B", "A", "I", "I" };
+    static const char *tmap2[] = { "B", "B", "B", "B", "I", "I", "B", "S", "S", "A", "I", "I" };
+    static const char *tmap3[] = { "T", "T", "T", "T", "I", "I", "B", "S", "S", "A", "I", "I" };
 
     bool ok;
     cJSON *settingobj;
@@ -837,7 +837,7 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
         if((ok = !!(root = json_create_response_hdr(command->id, true, true, &data, NULL)))) {
 
             ok &= add_system_value(data, "chip id", hal.info);
-            ok &= add_system_value(data, "CPU Freq", uitoa(hal.f_step_timer / (1024 * 1024)));
+            ok &= add_system_value(data, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
 
 #if SDCARD_ENABLE
             FATFS *fs;
@@ -910,7 +910,7 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
         if(isv3) {
 
             hal.stream.write(strappend(buf, 3, "chip id: ", hal.info, WEBUI_EOL));
-            hal.stream.write(strappend(buf, 3, "CPU Freq: ", uitoa(hal.f_step_timer / (1024 * 1024)), "Mhz" WEBUI_EOL));
+            hal.stream.write(strappend(buf, 3, "CPU Freq: ", uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL), "MHz" WEBUI_EOL));
 #if SDCARD_ENABLE
             FATFS *fs;
             DWORD fre_clust, used_sect, tot_sect;
@@ -975,7 +975,7 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
         } else {
 
             hal.stream.write(strappend(buf, 3, "Processor: ", hal.info, WEBUI_EOL));
-            hal.stream.write(strappend(buf, 3, "CPU Frequency: ", uitoa(hal.f_step_timer / (1024 * 1024)), "Mhz" WEBUI_EOL));
+            hal.stream.write(strappend(buf, 3, "CPU Frequency: ", uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL), "MHz" WEBUI_EOL));
             hal.stream.write(strappend(buf, 7, "FW version: ", GRBL_VERSION, "(", uitoa(GRBL_BUILD), ")(", hal.info, ")" WEBUI_EOL));
             hal.stream.write(strappend(buf, 3, "Driver version: ", hal.driver_version, WEBUI_EOL));
             if(hal.board)
