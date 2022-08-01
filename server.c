@@ -49,11 +49,17 @@
 
 #include "commands.h"
 
+#include "../grbl/protocol.h"
+
 #if WEBUI_INFLASH
 #include "filedata.h"
 #endif
 #if WEBUI_AUTH_ENABLE
 #include "login.h"
+#endif
+
+#ifndef WEBUI_AUTO_REPORT_INTERVAL
+#define WEBUI_AUTO_REPORT_INTERVAL 3000 // ms
 #endif
 
 extern struct fs_file *fs_create (void);
@@ -62,10 +68,12 @@ extern void fs_register_embedded_files (const embedded_file_t **files);
 extern void fs_reset (void);
 
 static bool file_is_json = false;
+static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
 static driver_setup_ptr driver_setup;
 static driver_reset_ptr driver_reset;
 static on_stream_changed_ptr on_stream_changed;
 static on_report_options_ptr on_report_options;
+static on_execute_realtime_ptr on_execute_realtime;
 static stream_write_ptr pre_stream;
 static stream_write_ptr claim_stream;
 
@@ -361,6 +369,19 @@ static const char *login_handler_get (http_request_t *request)
 
 #endif
 
+static void webui_auto_report (sys_state_t state)
+{
+    static uint32_t ms = 0;
+
+    if(auto_report_interval > 0 && (hal.get_elapsed_ticks() - ms) >= auto_report_interval) {
+        ms = hal.get_elapsed_ticks();
+        if(hal.stream.state.webui_connected)
+            protocol_enqueue_realtime_command(CMD_STATUS_REPORT);
+    }
+
+    on_execute_realtime(state);
+}
+
 void webui_init (void)
 {
 #if WEBUI_AUTH_ENABLE
@@ -378,6 +399,9 @@ void webui_init (void)
 
     on_stream_changed = grbl.on_stream_changed;
     grbl.on_stream_changed = stream_changed;
+
+    on_execute_realtime = grbl.on_execute_realtime;
+    grbl.on_execute_realtime = webui_auto_report;
 
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method =  HTTP_Get,  .handler = command },

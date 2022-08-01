@@ -99,13 +99,15 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
 static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
-static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
+static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
+#if SDCARD_ENABLE
+static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t get_sd_content (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
-static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
+#endif
 #if WIFI_ENABLE
 static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
 #endif
@@ -171,7 +173,9 @@ static const webui_cmd_binding_t webui_commands[] = {
 #if FLASHFS_ENABLE
     { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
 #endif
+#if SDCARD_ENABLE
     { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control current job" },
+#endif
 #if FLASHFS_ENABLE
     { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format local filesystem" },
     { 720, flash_get_capacity, { WebUIAuth_User, WebUIAuth_Admin},  "??" },
@@ -994,6 +998,8 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
     return Status_OK;
 }
 
+#if SDCARD_ENABLE
+
 // ESP701
 static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3)
 {
@@ -1061,6 +1067,8 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
 
     return Status_OK;
 }
+
+#endif
 
 // ESP800
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3)
@@ -1190,6 +1198,8 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
     return Status_OK;
 }
 
+#if SDCARD_ENABLE
+
 // ESP200
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3)
 {
@@ -1245,6 +1255,7 @@ static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fas
     return status;
 }
 
+#endif
 
 #if WIFI_ENABLE
 

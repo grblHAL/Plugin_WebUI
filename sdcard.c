@@ -295,7 +295,6 @@ const char *sdcard_handler (http_request_t *request)
 
 #endif
 
-
     if(*action && *filename) {
 
         FILINFO file;
@@ -353,6 +352,9 @@ const char *sdcard_handler (http_request_t *request)
     if(*path == '\0')
         strcpy(path, "/");
 
+    if(*status == '\0')
+        strcat(status, "ok");
+
     if(!(ok = sd_ls(request, path, status))) {
         http_set_response_status(request, "500 Internal server error");
         hal.stream.write("Failed to generate response");
@@ -364,11 +366,21 @@ const char *sdcard_handler (http_request_t *request)
 
 #else
 
+#if LWIP_HTTPD_FILE_STATE
+
     char *fname = (char *)file->state;
 
     fs_close(file);
 
     return fname;
+
+#else
+
+    fs_close(file);
+
+    return "cgi:qry.json";;
+
+#endif
 
 #endif
 }
