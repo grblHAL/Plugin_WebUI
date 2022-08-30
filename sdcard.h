@@ -29,21 +29,11 @@
 
 #include "webui.h"
 
-#include "../networking/http_upload.h"
-
-#ifdef ESP_PLATFORM
-
-esp_err_t sdcard_handler (http_request_t *request);
-esp_err_t sdcard_upload_handler (http_request_t *request);
-
-#else
-
 #include "../networking/httpd.h"
+#include "../networking/http_upload.h"
 
 const char *sdcard_handler (http_request_t *request);
 const char *sdcard_upload_handler (http_request_t *request);
 const char *sdcard_download_handler (http_request_t *request);
-
-#endif
 
 #endif // __WEBUI_SDCARD_H__
