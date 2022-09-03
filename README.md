@@ -18,6 +18,8 @@ The following drivers can be used with this plugin:
 |-------------------------------------------------------------------|------------|--------------|
 | [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           |
 | [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          |
+| [RP2040](https://github.com/grblHAL/RP2040)                       | 2.1.1      | no           |
+| [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           |
 | [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          |
 
 #### Installation:
@@ -39,14 +41,11 @@ I have added these to Eclipse based build configurations, but sadly the Arduino 
 
 See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/tree/3bc2b569057495f66e891c88bd073bc71ace8b83/lwIP%20patch) for instructions for how to apply it.
 
-
 #### Alternative UI:
 
 [grblTouch](https://github.com/karoria/grblTouch) by @karoria
 
 ---
-
-__Note:__ The [ESP32 driver](https://github.com/grblHAL/ESP32) has its own WebUI implementation on top of the Espressif socket based http daemon and thus does not use this plugin.
 
 #### Dependencies:
 
@@ -55,4 +54,4 @@ __Note:__ The [ESP32 driver](https://github.com/grblHAL/ESP32) has its own WebUI
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2022-07-24
+2022-09-03

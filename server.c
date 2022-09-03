@@ -121,8 +121,10 @@ static webui_auth_level_t get_auth_level (http_request_t *req)
 static const char *command (http_request_t *request)
 {
     static bool busy;
+
     bool ok;
     char data[100], *cmd;
+    vfs_file_t *file;
 
     file_is_json = false;
 
@@ -141,8 +143,7 @@ static const char *command (http_request_t *request)
 
     if((cmd = strstr(data, "[ESP"))) {
 
-        vfs_file_t *file = vfs_open("/ram/qry", "w");
-        if(file == NULL) {
+        if((file = vfs_open("/stream/qry", "w")) == NULL) {
             busy = false;
             http_set_response_status(request, "500 Internal Server Error");
             return NULL;
@@ -257,8 +258,7 @@ static const char *command (http_request_t *request)
             }
         }
 
-        vfs_file_t *file = vfs_open("/ram/qry.txt", "w");
-        if(file == NULL) {
+        if((file = vfs_open("/stream/qry.txt", "w")) == NULL) {
             busy = false;
             http_set_response_status(request, "500 Internal Server Error");
             return NULL;
@@ -270,7 +270,7 @@ static const char *command (http_request_t *request)
 
     busy = false;
 
-    return file_is_json ? "/ram/qry.json" : "/ram/qry.txt";
+    return file_is_json ? "/stream/qry.json" : "/stream/qry.txt";
 }
 
 #if WEBUI_INFLASH
