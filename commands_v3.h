@@ -1,5 +1,5 @@
 /*
-  webui/commands.h - An embedded CNC Controller with rs274/ngc (g-code) support
+  webui/commands_v3.h - An embedded CNC Controller with rs274/ngc (g-code) support
 
   WebUI backend for https://github.com/luc-github/ESP3D-webui
 
@@ -21,13 +21,13 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __WEBUI_COMMANDS_H__
-#define __WEBUI_COMMANDS_H__
+#ifndef __WEBUI_COMMANDS3_H__
+#define __WEBUI_COMMANDS3_H__
 
 #include "webui.h"
 
 #include "grbl/grbl.h"
 
-status_code_t webui_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file);
+status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file);
 
 #endif

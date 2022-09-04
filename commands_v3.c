@@ -1,5 +1,5 @@
 /*
-  webui/commands.c - An embedded CNC Controller with rs274/ngc (g-code) support
+  webui/commands_v3.c - An embedded CNC Controller with rs274/ngc (g-code) support
 
   WebUI backend for https://github.com/luc-github/ESP3D-webui
 
@@ -61,8 +61,6 @@
 #define FIRMWARE_ID "80"
 #define FIRMWARE_TARGET "grblHAL"
 
-static bool client_isv3 = false; // TODO: bind to connection (client ip/port)!
-
 extern void data_is_json (void);
 
 typedef enum {
@@ -86,35 +84,34 @@ typedef struct {
 
 typedef struct webui_cmd_binding {
     uint_fast16_t id;
-    status_code_t (*handler)(const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
+    status_code_t (*handler)(const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
     webui_auth_required_t auth;
     const char *help;
     webui_setting_map_t setting;
 } webui_cmd_binding_t;
 
-//typedef status_code_t (*webui_command_handler_ptr)(const webui_cmd_binding_t *command, uint_fast16_t argc, char **argv, bool json, bool isv3);
+//typedef status_code_t (*webui_command_handler_ptr)(const webui_cmd_binding_t *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 
-static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
+static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t get_set_time (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 #if SDCARD_ENABLE
-static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t get_sd_content (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
+static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 #endif
 #if WIFI_ENABLE
-static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
+static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 #endif
 #if FLASHFS_ENABLE
-static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
-static status_code_t flash_get_capacity (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file);
+static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
+static status_code_t flash_get_capacity (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 #endif
 
 static const webui_cmd_binding_t webui_commands[] = {
@@ -145,6 +142,7 @@ static const webui_cmd_binding_t webui_commands[] = {
     { 130, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set Telnet state", { Setting_NetworkServices, 0 } },
     { 131, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set Telnet port", { Setting_TelnetPort, -1 } },
 #endif
+    { 140, get_set_time,       { WebUIAuth_Guest, WebUIAuth_Admin}, "(json=yes) - sync/display/set time"},
 #if WEBSOCKET_ENABLE
     { 160, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set WebSocket state", { Setting_NetworkServices, 1 } },
     { 161, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set WebSocket port", { Setting_WebSocketPort, -1 } },
@@ -160,8 +158,6 @@ static const webui_cmd_binding_t webui_commands[] = {
 // Action commands
 #if SDCARD_ENABLE
     { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
-    { 210, get_sd_content,     { WebUIAuth_User, WebUIAuth_Admin},  "??" },
-    { 220, sd_print,           { WebUIAuth_User, WebUIAuth_Admin},  "??" },
 #endif
     { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
     { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
@@ -285,7 +281,7 @@ static bool json_write_response (cJSON *json, vfs_file_t *file)
     return !!json;
 }
 
-status_code_t webui_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
+status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
 {
     bool json;
     status_code_t status = Status_Unhandled;
@@ -313,7 +309,7 @@ status_code_t webui_command_handler (uint32_t command, uint_fast16_t argc, char 
                 status = auth_level < WebUIAuth_User ? Status_AuthenticationRequired : Status_AccessDenied;
             } else
 #endif
-            status = webui_commands[i].handler(&webui_commands[i], argc, argv, json, client_isv3, file);
+            status = webui_commands[i].handler(&webui_commands[i], argc, argv, json, file);
             i = 0;
         }
     }
@@ -400,7 +396,7 @@ static uint32_t get_int_setting_value (const setting_detail_t *setting, uint_fas
     return value;
 }
 
-static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     char response[100];
@@ -524,7 +520,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
 }
 
 // ESP0
-static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     char buf[200];
@@ -595,9 +591,8 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
 }
 
 // Add setting to the JSON response array
-static bool add_setting (cJSON *settings, bool isv3, setting_id_t id, int32_t bit, uint_fast16_t offset)
+static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fast16_t offset)
 {
-    static const char *tmap2[] = { "B", "B", "B", "B", "I", "I", "B", "S", "S", "A", "I", "I" };
     static const char *tmap3[] = { "T", "T", "T", "T", "I", "I", "B", "S", "S", "A", "I", "I" };
 
     bool ok;
@@ -613,11 +608,10 @@ static bool add_setting (cJSON *settings, bool isv3, setting_id_t id, int32_t bi
             bit = 0;
 
         strcpy(opt, group->name);
-        if(isv3) {
-            strcat(opt, "/");
-            strcat(opt, group->name);
-        }
-        ok  = !!cJSON_AddStringToObject(settingobj, "F", isv3 ? opt : "network");
+        strcat(opt, "/");
+        strcat(opt, group->name);
+
+        ok  = !!cJSON_AddStringToObject(settingobj, "F", opt);
 
         strcpy(opt, uitoa(setting->id));
         if(bit >= 0) {
@@ -625,10 +619,10 @@ static bool add_setting (cJSON *settings, bool isv3, setting_id_t id, int32_t bi
             strcat(opt, uitoa(bit));
         }
         ok &= !!cJSON_AddStringToObject(settingobj, "P", opt);
-        ok &= !!cJSON_AddStringToObject(settingobj, "T", isv3 ? tmap3[setting->datatype] : tmap2[setting->datatype]);
+        ok &= !!cJSON_AddStringToObject(settingobj, "T", tmap3[setting->datatype]);
         ok &= !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : get_int_setting_value(setting, offset) & (1 << bit) ? "1" : "0");
         ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name : strgetentry(opt, setting->format, bit, ','));
-        if(isv3 && setting->reboot_required)
+        if(setting->reboot_required)
             ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
 
         if(ok) switch(setting->datatype) {
@@ -682,59 +676,59 @@ static bool add_setting (cJSON *settings, bool isv3, setting_id_t id, int32_t bi
 }
 
 // ESP400
-static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     cJSON *root = cJSON_CreateObject(), *settings = NULL;
 
-    if((ok = root != NULL) && isv3) {
+    if((ok = root != NULL)) {
         ok &= !!cJSON_AddStringToObject(root, "cmd", uitoa(command->id));
         ok &= !!cJSON_AddStringToObject(root, "status", "ok");
     }
 
-    if((ok &= !!(settings = cJSON_AddArrayToObject(root, isv3 ? "data" : "EEPROM")))) {
+    if((ok &= !!(settings = cJSON_AddArrayToObject(root, "data")))) {
 
-        add_setting(settings, isv3, Setting_Hostname, -1, 0);
+        add_setting(settings, Setting_Hostname, -1, 0);
 #if HTTP_ENABLE
-        add_setting(settings, isv3, Setting_NetworkServices, 2, 0);
-        add_setting(settings, isv3, Setting_HttpPort, -1, 0);
+        add_setting(settings, Setting_NetworkServices, 2, 0);
+        add_setting(settings, Setting_HttpPort, -1, 0);
 #endif
 #if TELNET_ENABLE
-        add_setting(settings, isv3, Setting_NetworkServices, 0, 0);
-        add_setting(settings, isv3, Setting_TelnetPort, -1, 0);
+        add_setting(settings, Setting_NetworkServices, 0, 0);
+        add_setting(settings, Setting_TelnetPort, -1, 0);
 #endif
 #if WEBSOCKET_ENABLE
-        add_setting(settings, isv3, Setting_NetworkServices, 1, 0);
-        add_setting(settings, isv3, Setting_WebSocketPort, -1, 0);
+        add_setting(settings, Setting_NetworkServices, 1, 0);
+        add_setting(settings, Setting_WebSocketPort, -1, 0);
 #endif
 #if FTP_ENABLE
-        add_setting(settings, isv3, Setting_NetworkServices, 3, 0);
-        add_setting(settings, isv3, Setting_FtpPort, -1, 0);
+        add_setting(settings, Setting_NetworkServices, 3, 0);
+        add_setting(settings, Setting_FtpPort, -1, 0);
 #endif
-        add_setting(settings, isv3, Setting_IpMode, -1, 0);
-//        add_setting(settings, isv3, Setting_ReportInches, -1, 0);
+        add_setting(settings, Setting_IpMode, -1, 0);
+//        add_setting(settings, Setting_ReportInches, -1, 0);
 #if ETHERNET_ENABLE
-        add_setting(settings, isv3, Setting_IpAddress, -1, 0);
-        add_setting(settings, isv3, Setting_Gateway, -1, 0);
-        add_setting(settings, isv3, Setting_NetMask, -1, 0);
+        add_setting(settings, Setting_IpAddress, -1, 0);
+        add_setting(settings, Setting_Gateway, -1, 0);
+        add_setting(settings, Setting_NetMask, -1, 0);
 #endif
 #if WIFI_ENABLE
-        add_setting(settings, isv3, Setting_WifiMode, -1, 0);
+        add_setting(settings, Setting_WifiMode, -1, 0);
 
-        add_setting(settings, isv3, Setting_WiFi_STA_SSID, -1, 0);
-        add_setting(settings, isv3, Setting_WiFi_STA_Password, -1, 0);
-        add_setting(settings, isv3, Setting_IpMode, -1, 0);
-        add_setting(settings, isv3, Setting_IpAddress, -1, 0);
-        add_setting(settings, isv3, Setting_Gateway, -1, 0);
-        add_setting(settings, isv3, Setting_NetMask, -1, 0);
+        add_setting(settings, Setting_WiFi_STA_SSID, -1, 0);
+        add_setting(settings, Setting_WiFi_STA_Password, -1, 0);
+        add_setting(settings, Setting_IpMode, -1, 0);
+        add_setting(settings, Setting_IpAddress, -1, 0);
+        add_setting(settings, Setting_Gateway, -1, 0);
+        add_setting(settings, Setting_NetMask, -1, 0);
 
-        add_setting(settings, isv3, Setting_WiFi_AP_SSID, -1, 0);
-        add_setting(settings, isv3, Setting_WiFi_AP_Password, -1, 0);
-        add_setting(settings, isv3, Setting_IpAddress2, -1, 0);
+        add_setting(settings, Setting_WiFi_AP_SSID, -1, 0);
+        add_setting(settings, Setting_WiFi_AP_Password, -1, 0);
+        add_setting(settings, Setting_IpAddress2, -1, 0);
 
 #endif
 #if BLUETOOTH_ENABLE
-//      add_setting(settings, isv3, Setting_WifiMode, -1, 0);
+//      add_setting(settings, Setting_WifiMode, -1, 0);
 #endif
 
         json_write_response(root, file);
@@ -748,7 +742,7 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 }
 
 // ESP401
-static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
     char *setting_id = get_arg(argc, argv, "P=");
@@ -824,7 +818,7 @@ static bool add_system_value (cJSON *settings, char *id, char *value)
 }
 
 // ESP420
-static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char buf[200];
     network_info_t *network = networking_get_info();
@@ -909,92 +903,69 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
             json_write_response(root, file);
         }
     } else {
-        if(isv3) {
-
-            vfs_puts(strappend(buf, 3, "chip id: ", hal.info, WEBUI_EOL), file);
-            vfs_puts(strappend(buf, 3, "CPU Freq: ", uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL), "MHz" WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "chip id: ", hal.info, WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "CPU Freq: ", uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL), "MHz" WEBUI_EOL), file);
 #if SDCARD_ENABLE
-            FATFS *fs;
-            DWORD fre_clust, used_sect, tot_sect;
+        FATFS *fs;
+        DWORD fre_clust, used_sect, tot_sect;
 
-            vfs_puts("FS type: SD" WEBUI_EOL, file);
+        vfs_puts("FS type: SD" WEBUI_EOL, file);
 
-            if(f_getfree("", &fre_clust, &fs) == FR_OK) {
-                tot_sect = (fs->n_fatent - 2) * fs->csize;
-                used_sect = tot_sect - fre_clust * fs->csize;
-                strcpy(buf, "FS usage: ");
-                strcat(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
-                strcat(buf, "/");
-                strcat(buf, btoa(tot_sect << 9));
-                strcat(buf, WEBUI_EOL);
-                vfs_puts(buf, file);
-            }
+        if(f_getfree("", &fre_clust, &fs) == FR_OK) {
+            tot_sect = (fs->n_fatent - 2) * fs->csize;
+            used_sect = tot_sect - fre_clust * fs->csize;
+            strcpy(buf, "FS usage: ");
+            strcat(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
+            strcat(buf, "/");
+            strcat(buf, btoa(tot_sect << 9));
+            strcat(buf, WEBUI_EOL);
+            vfs_puts(buf, file);
+        }
 #endif
 #if WIFI_ENABLE
-            vfs_puts("wifi: ON" WEBUI_EOL, file);
+        vfs_puts("wifi: ON" WEBUI_EOL, file);
 #elif ETHERNET_ENABLE
-            vfs_puts("wifi: OFF" WEBUI_EOL, file);
-            vfs_puts("ethernet: ON" WEBUI_EOL, file);
+        vfs_puts("wifi: OFF" WEBUI_EOL, file);
+        vfs_puts("ethernet: ON" WEBUI_EOL, file);
 #endif
-            if(network->status.services.http)
-                vfs_puts(strappend(buf, 3, "HTTP port: ", uitoa(network->status.http_port), WEBUI_EOL), file);
-            if(network->status.services.telnet)
-                vfs_puts(strappend(buf, 3, "Telnet port: ", uitoa(network->status.telnet_port), WEBUI_EOL), file);
-            if(network->status.services.ftp)
-                vfs_puts(strappend(buf, 5, "Ftp ports: ", uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port), WEBUI_EOL), file);
-            if(network->status.services.websocket)
-                vfs_puts(strappend(buf, 3, "Websocket port: ", uitoa(network->status.websocket_port), WEBUI_EOL), file);
+        if(network->status.services.http)
+            vfs_puts(strappend(buf, 3, "HTTP port: ", uitoa(network->status.http_port), WEBUI_EOL), file);
+        if(network->status.services.telnet)
+            vfs_puts(strappend(buf, 3, "Telnet port: ", uitoa(network->status.telnet_port), WEBUI_EOL), file);
+        if(network->status.services.ftp)
+            vfs_puts(strappend(buf, 5, "Ftp ports: ", uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port), WEBUI_EOL), file);
+        if(network->status.services.websocket)
+            vfs_puts(strappend(buf, 3, "Websocket port: ", uitoa(network->status.websocket_port), WEBUI_EOL), file);
 
-            if(network->is_ethernet) {
+        if(network->is_ethernet) {
 
-                if(*network->mac != '\0')
-                    vfs_puts(strappend(buf, 3, "ethernet: ", network->mac, WEBUI_EOL), file);
-                vfs_puts(network->link_up
-                                  ? strappend(buf, 4, "cable: connected (", uitoa(network->mbps), "Mbps)", WEBUI_EOL)
-                                  : strappend(buf, 2, "cable: disconnected", WEBUI_EOL), file);
+            if(*network->mac != '\0')
+                vfs_puts(strappend(buf, 3, "ethernet: ", network->mac, WEBUI_EOL), file);
+            vfs_puts(network->link_up
+                              ? strappend(buf, 4, "cable: connected (", uitoa(network->mbps), "Mbps)", WEBUI_EOL)
+                              : strappend(buf, 2, "cable: disconnected", WEBUI_EOL), file);
 
-                vfs_puts(strappend(buf, 3, "ip mode: ", network->status.ip_mode == IpMode_Static ? "static" : "dhcp", WEBUI_EOL), file);
-                vfs_puts(strappend(buf, 3, "ip: ", network->status.ip, WEBUI_EOL), file);
+            vfs_puts(strappend(buf, 3, "ip mode: ", network->status.ip_mode == IpMode_Static ? "static" : "dhcp", WEBUI_EOL), file);
+            vfs_puts(strappend(buf, 3, "ip: ", network->status.ip, WEBUI_EOL), file);
 
-                if(*network->status.gateway != '\0')
-                    vfs_puts(strappend(buf, 3, "gw: ", network->status.gateway, WEBUI_EOL), file);
+            if(*network->status.gateway != '\0')
+                vfs_puts(strappend(buf, 3, "gw: ", network->status.gateway, WEBUI_EOL), file);
 
-                if(*network->status.mask != '\0')
-                    vfs_puts(strappend(buf, 3, "msk: ", network->status.mask, WEBUI_EOL), file);
-            }
+            if(*network->status.mask != '\0')
+                vfs_puts(strappend(buf, 3, "msk: ", network->status.mask, WEBUI_EOL), file);
+        }
 
 #if WEBUI_AUTH_ENABLE
-            vfs_puts("authentication: ON" WEBUI_EOL, file);
+        vfs_puts("authentication: ON" WEBUI_EOL, file);
 #endif
 //          vfs_puts("flash: OFF" WEBUI_EOL);
 #if SDCARD_ENABLE
-            vfs_puts("sd: ON (FatFS)" WEBUI_EOL, file);
+        vfs_puts("sd: ON (FatFS)" WEBUI_EOL, file);
 #endif
-            vfs_puts("targetfw: grblHAL" WEBUI_EOL, file);
-            vfs_puts(strappend(buf, 3, "FW ver", strappend(buf, 4, GRBL_VERSION, "-", uitoa(GRBL_BUILD), WEBUI_EOL)), file);
-            vfs_puts(strappend(buf, 3, "FW arch", hal.board, WEBUI_EOL), file);
+        vfs_puts("targetfw: grblHAL" WEBUI_EOL, file);
+        vfs_puts(strappend(buf, 3, "FW ver", strappend(buf, 4, GRBL_VERSION, "-", uitoa(GRBL_BUILD), WEBUI_EOL)), file);
+        vfs_puts(strappend(buf, 3, "FW arch", hal.board, WEBUI_EOL), file);
 
-        } else {
-
-            vfs_puts(strappend(buf, 3, "Processor: ", hal.info, WEBUI_EOL), file);
-            vfs_puts(strappend(buf, 3, "CPU Frequency: ", uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL), "MHz" WEBUI_EOL), file);
-            vfs_puts(strappend(buf, 7, "FW version: ", GRBL_VERSION, "(", uitoa(GRBL_BUILD), ")(", hal.info, ")" WEBUI_EOL), file);
-            vfs_puts(strappend(buf, 3, "Driver version: ", hal.driver_version, WEBUI_EOL), file);
-            if(hal.board)
-                vfs_puts(strappend(buf, 3, "Board: ", hal.board, WEBUI_EOL), file);
-        //    vfs_puts(strappend(buf, 3, "Free memory: ", uitoa(esp_get_free_heap_size()), WEBUI_EOL));
-            vfs_puts("Baud rate: 115200\n", file);
-            vfs_puts(strappend(buf, 3, "IP: ", network->status.ip, WEBUI_EOL), file);
-#if TELNET_ENABLE
-            vfs_puts(strappend(buf, 3, "Data port: ", uitoa(network->status.telnet_port), WEBUI_EOL), file);
-#endif
-#if TELNET_ENABLE
-            vfs_puts(strappend(buf, 3, "Web port: ", uitoa(network->status.http_port), WEBUI_EOL), file);
-#endif
-#if WEBSOCKET_ENABLE
-            vfs_puts(strappend(buf, 3, "Websocket port: ", uitoa(network->status.websocket_port), WEBUI_EOL), file);
-#endif
-        }
     }
 
     return Status_OK;
@@ -1003,7 +974,7 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
 #if SDCARD_ENABLE
 
 // ESP701
-static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     sdcard_job_t *job = sdcard_get_job_info();
@@ -1073,10 +1044,12 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
 #endif
 
 // ESP800
-static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char buf[200];
     network_info_t *network = networking_get_info();
+/*
+    bool client_isv3;
 
     char *version;
 
@@ -1084,7 +1057,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
         client_isv3 = *version == '3';
     else
         client_isv3 = false;
-
+*/
     if(json) {
 
         bool ok;
@@ -1105,6 +1078,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
 #endif
             ok &= !!cJSON_AddStringToObject(data, "WebCommunication", "Synchronous");
             ok &= !!cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip);
+            ok &= !!cJSON_AddStringToObject(data, "WebSocketSubProtocol", "webui-v3");
             ok &= !!cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port));
             ok &= !!cJSON_AddStringToObject(data, "Hostname", network->status.hostname);
 #if WIFI_ENABLE
@@ -1116,79 +1090,57 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
 #endif
             ok &= !!cJSON_AddStringToObject(data, "WebUpdate", "Disabled");
             ok &= !!cJSON_AddStringToObject(data, "FileSystem", "none");
-            ok &= !!cJSON_AddStringToObject(data, "Time", "none");
+            if(hal.rtc.get_datetime) {
+                struct tm time;
+                ok &= !!cJSON_AddStringToObject(data, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
+            } else
+                ok &= !!cJSON_AddStringToObject(data, "Time", "none");
 
             json_write_response(root, file);
         }
     } else {
 
-        if(isv3) {
-
-            vfs_puts("FW version:" GRBL_VERSION WEBUI_EOL, file);
-            vfs_puts("FW target:" FIRMWARE_TARGET WEBUI_EOL, file);
-            vfs_puts("FW ID:" FIRMWARE_ID WEBUI_EOL, file);
+        vfs_puts("FW version:" GRBL_VERSION WEBUI_EOL, file);
+        vfs_puts("FW target:" FIRMWARE_TARGET WEBUI_EOL, file);
+        vfs_puts("FW ID:" FIRMWARE_ID WEBUI_EOL, file);
 #if SDCARD_ENABLE
-            vfs_puts(strappend(buf, 3, "SD connection:", "direct", WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "SD connection:", "direct", WEBUI_EOL), file);
 #else
-            vfs_puts(strappend(buf, 3, "SD connection:", "none", WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "SD connection:", "none", WEBUI_EOL), file);
 #endif
-            vfs_puts("Serial protocol:Socket" WEBUI_EOL, file);
+        vfs_puts("Serial protocol:Socket" WEBUI_EOL, file);
 #if WEBUI_AUTH_ENABLE
-            vfs_puts("Authentication:Enabled" WEBUI_EOL, file);
+        vfs_puts("Authentication:Enabled" WEBUI_EOL, file);
 #else
-            vfs_puts("Authentication:Disabled" WEBUI_EOL, file);
+        vfs_puts("Authentication:Disabled" WEBUI_EOL, file);
 #endif
-            vfs_puts("Web Communication:Synchronous" WEBUI_EOL, file);
-            vfs_puts(strappend(buf, 3, "Web Socket IP:", network->status.ip, WEBUI_EOL), file);
-            vfs_puts(strappend(buf, 3, "Web Socket Port:", uitoa(network->status.websocket_port), WEBUI_EOL), file);
-            vfs_puts(strappend(buf, 3, "Hostname:", network->status.hostname, WEBUI_EOL), file);
+        vfs_puts("Web Communication:Synchronous" WEBUI_EOL, file);
+        vfs_puts(strappend(buf, 3, "Web Socket IP:", network->status.ip, WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "Web Socket Port:", uitoa(network->status.websocket_port), WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "Hostname:", network->status.hostname, WEBUI_EOL), file);
 #if WIFI_ENABLE
-  #if WIFI_SOFTAP
-            vfs_puts("WiFi mode:AP" WEBUI_EOL, file);
-  #else
-            vfs_puts("WiFi mode:STA" WEBUI_EOL, file);
-  #endif
+#if WIFI_SOFTAP
+        vfs_puts("WiFi mode:AP" WEBUI_EOL, file);
+#else
+        vfs_puts("WiFi mode:STA" WEBUI_EOL, file);
 #endif
-            vfs_puts("File system:none" WEBUI_EOL, file);
+#endif
+        vfs_puts("File system:none" WEBUI_EOL, file);
+        if(hal.rtc.get_datetime) {
+            struct tm time;
+            if(hal.rtc.get_datetime(&time))
+                vfs_puts("Time:Manual" WEBUI_EOL, file);
+            else
+                vfs_puts("Time:Not set" WEBUI_EOL, file);
+        } else
             vfs_puts("Time:none" WEBUI_EOL, file);
-
-        } else {
-
-            strcpy(buf, "FW version:");
-            strcat(buf, GRBL_VERSION);
-            strcat(buf, " # FW target:grbl-embedded # FW HW:");
-        #if SDCARD_ENABLE
-            strcat(buf, "Direct SD");
-        #else
-            strcat(buf, "No SD");
-        #endif
-            strcat(buf, " # primary sd:/sd # secondary sd:none # authentication:");
-        #if WEBUI_AUTH_ENABLE
-            strcat(buf, "yes");
-        #else
-            strcat(buf, "no");
-        #endif
-        #if HTTP_ENABLE
-            strcat(buf, " # webcommunication: Sync: ");
-            strcat(buf, uitoa(network->status.websocket_port));
-        #endif
-            strcat(buf, " # hostname:");
-            strcat(buf, network->status.hostname);
-        #if WIFI_SOFTAP
-            strcat(buf,"(AP mode)");
-        #endif
-            strcat(buf, " # axis:");
-            strcat(buf, uitoa(N_AXIS));
-        }
-
-        vfs_puts(buf, file);
     }
 
     return Status_OK;
 }
 
 // ESP111
-static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char response[20];
 
@@ -1200,10 +1152,46 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
     return Status_OK;
 }
 
+// ESP140
+static status_code_t get_set_time (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+{
+    char msg[30];
+
+    if(hal.rtc.get_datetime) {
+ 
+        struct tm time;
+
+        if(argc == 1) {
+/*
+            bool refresh = !!get_arg(argc, argv, "REFRESH"), release = !!get_arg(argc, argv, "RELEASE");
+
+            trim_arg(&argc, argv, "REFRESH"); // Mount?
+            trim_arg(&argc, argv, "RELEASE"); // Unmount?
+
+            msg = argc ? "Unknown parameter" : (release ? "SD card released" : "SD card ok");
+*/
+        } else {
+
+            hal.rtc.get_datetime(&time);
+            sprintf(msg, "%4d-%02d-%02dT%02d:%02d:%02d", time.tm_year + 1900, time.tm_mon + 1, time.tm_mday, time.tm_hour, time.tm_min, time.tm_sec);
+
+            if(json)
+                json_write_response(json_create_response_hdr(command->id, false, true, NULL, msg), file);
+            else {
+                vfs_puts(msg, file);
+                vfs_puts(WEBUI_EOL, file);
+            }
+        }
+    }
+
+    return Status_OK;
+}
+
+
 #if SDCARD_ENABLE
 
 // ESP200
-static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char *msg;
 
@@ -1229,40 +1217,12 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
     return Status_OK;
 }
 
-// ESP210
-static status_code_t get_sd_content (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
-{
-    status_code_t status = sys_execute("$F");
-
-    return status;
-}
-
-// ESP220
-static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
-{
-    char response[50];
-    status_code_t status = Status_IdleError;
-
-    if(hal.stream.type != StreamType_SDCard) { // Already streaming a file?
-        char *cmd = get_arg(argc, argv, NULL);
-        if(strlen(cmd) > 0) {
-            strcpy(response, "$F=");
-            strcat(response, cmd);
-            status = sys_execute(response);
-        }
-    }
-
-    vfs_puts(status == Status_OK ? "ok" : "error:cannot stream file", file);
-
-    return status;
-}
-
 #endif
 
 #if WIFI_ENABLE
 
 // ESP410
-static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
 
@@ -1306,7 +1266,7 @@ static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_
 #endif
 
 // ESP444
-static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     status_code_t status = Status_OK;
 
@@ -1325,7 +1285,7 @@ static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uin
 #if FLASHFS_ENABLE
 
 // ESP700
-static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3)
+static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     status_code_t status = Status_IdleError;
 
@@ -1342,7 +1302,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
     return status;
 }
 
-static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char *cmd = get_arg(argc, argv, NULL);
     status_code_t status = Status_InvalidStatement;
@@ -1357,7 +1317,7 @@ static status_code_t flash_format (const struct webui_cmd_binding *command, uint
     return status;
 }
 
-static status_code_t flash_get_capacity (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, bool isv3, vfs_file_t *file)
+static status_code_t flash_get_capacity (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     status_code_t status = Status_OK;
 

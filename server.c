@@ -53,7 +53,8 @@
 #include "../sdcard/sdcard.h"
 #endif
 
-#include "commands.h"
+#include "commands_v2.h"
+#include "commands_v3.h"
 
 #include "../grbl/protocol.h"
 
@@ -67,18 +68,19 @@
 #endif
 
 #ifndef WEBUI_AUTO_REPORT_INTERVAL
-#define WEBUI_AUTO_REPORT_INTERVAL 3000 // ms
+#define WEBUI_AUTO_REPORT_INTERVAL 0 // ms
 #endif
 
 #include "grbl/vfs.h"
 
-static bool file_is_json = false;
+static bool file_is_json = false, is_v3 = false;
 static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
 static driver_setup_ptr driver_setup;
 static driver_reset_ptr driver_reset;
 static on_stream_changed_ptr on_stream_changed;
 static on_report_options_ptr on_report_options;
 static on_execute_realtime_ptr on_execute_realtime;
+static websocket_on_protocol_select_ptr on_protocol_select;
 static stream_write_ptr pre_stream;
 static stream_write_ptr claim_stream;
 
@@ -113,6 +115,14 @@ static webui_auth_level_t get_auth_level (http_request_t *req)
 }
 
 #endif
+
+static char *websocket_protocol_select (char *protocols, bool *is_binary)
+{
+    if((is_v3 = strlookup(protocols, "webui-v3", ',') >= 0))
+        *is_binary = true;
+
+    return is_v3 ? "webui-v3" : (on_protocol_select ? on_protocol_select(protocols, is_binary) : NULL);
+}
 
 //static ip_addr_t ip;
 //static uint16_t port;
@@ -215,7 +225,43 @@ static const char *command (http_request_t *request)
                 }
             }
 
-            ok &= (status = webui_command_handler(atol(cmd), argc, argv, get_auth_level(request), file)) == Status_OK;
+            uint_fast16_t cmdv = atol(cmd);
+
+            if(cmdv == 800 && argc) {
+
+                uint_fast16_t idx = argc;
+
+                is_v3 = false;
+
+                do {
+                    if(!strncmp(argv[--idx], "version", 7))
+                        is_v3 = argv[idx][8] == '3';
+                } while(idx);
+
+                if(hal.rtc.set_datetime) {
+ 
+                    struct tm time;
+
+                    idx = argc;
+                    tmp = NULL;
+
+                    do {
+                        if(!strncmp(argv[--idx], "time", 4))
+                            tmp = &argv[idx][5];
+                    } while(idx && tmp == NULL);
+
+                    if(tmp && strtotime(tmp, &time))
+                        hal.rtc.set_datetime(&time);
+                }
+            }
+
+            if(!is_v3)
+                is_v3 = cmdv == 701;
+
+            if(is_v3)
+                ok &= (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+            else
+                ok &= (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
 
 #if WEBUI_AUTH_ENABLE
             if(status == Status_AuthenticationRequired || status == Status_AccessDenied) {
@@ -583,7 +629,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.04]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.05]" ASCII_EOL);
 }
 
 static bool webui_setup (settings_t *settings)
@@ -674,6 +720,9 @@ void webui_init (void)
 
     on_execute_realtime = grbl.on_execute_realtime;
     grbl.on_execute_realtime = webui_auto_report;
+
+    on_protocol_select = websocket.on_protocol_select;
+    websocket.on_protocol_select = websocket_protocol_select;
 
     httpd.on_open_file_failed = file_redirect;
 

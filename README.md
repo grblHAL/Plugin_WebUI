@@ -18,7 +18,7 @@ The following drivers can be used with this plugin:
 |-------------------------------------------------------------------|------------|--------------|
 | [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           |
 | [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          |
-| [RP2040](https://github.com/grblHAL/RP2040)                       | 2.1.1      | no           |
+| [RP2040 \(Pi Pico W\)](https://github.com/grblHAL/RP2040)         | 2.1.1      | no           |
 | [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           |
 | [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          |
 

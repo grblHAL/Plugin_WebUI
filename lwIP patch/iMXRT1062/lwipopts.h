@@ -508,7 +508,7 @@
 
 //#define LWIP_HTTPD_SSI                 1
 
-#define LWIP_HTTPD_CUSTOM_FILES        1
+#define LWIP_HTTPD_CUSTOM_FILES        0
 
 #define LWIP_HTTPD_DYNAMIC_FILE_READ   1
 
