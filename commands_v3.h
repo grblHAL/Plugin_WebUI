@@ -29,5 +29,6 @@
 #include "grbl/grbl.h"
 
 status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file);
+status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 
 #endif

@@ -1,14 +1,11 @@
 /*
-  sdcard.h - An embedded CNC Controller with rs274/ngc (g-code) support
+  args.h - An embedded CNC Controller with rs274/ngc (g-code) support
 
-  Webserver backend - sdcard handling
+  WebUI backend for https://github.com/luc-github/ESP3D-webui
 
   Part of grblHAL
 
-  Copyright (c) 2020-2022 Terje Io
-
-  Some parts of the code is based on test code by francoiscolas
-  https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
+  Copyright (c) 2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,15 +21,11 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __WEBUI_SDCARD_H__
-#define __WEBUI_SDCARD_H__
+#ifndef __WEBUI_ARGS_H__
+#define __WEBUI_ARGS_H__
 
-#include "webui.h"
+char *webui_get_arg (uint_fast16_t argc, char **argv, char *arg);
+bool webui_get_bool_arg (uint_fast16_t argc, char **argv, char *arg);
+void webui_trim_arg (uint_fast16_t *argc, char **argv, char *arg);
 
-#include "../networking/httpd.h"
-
-const char *sdcard_handler (http_request_t *request);
-const char *sdcard_upload_handler (http_request_t *request);
-const char *sdcard_download_handler (http_request_t *request);
-
-#endif // __WEBUI_SDCARD_H__
+#endif

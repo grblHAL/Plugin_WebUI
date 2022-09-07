@@ -1,11 +1,11 @@
 /*
-  sdcard.h - An embedded CNC Controller with rs274/ngc (g-code) support
+  flashfs.h - An embedded CNC Controller with rs274/ngc (g-code) support
 
   Webserver backend - sdcard handling
 
   Part of grblHAL
 
-  Copyright (c) 2020-2022 Terje Io
+  Copyright (c) 2022 Terje Io
 
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
@@ -24,15 +24,15 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __WEBUI_SDCARD_H__
-#define __WEBUI_SDCARD_H__
+#ifndef __WEBUI_FLASHFS_H__
+#define __WEBUI_FLASHFS_H__
 
 #include "webui.h"
 
 #include "../networking/httpd.h"
 
-const char *sdcard_handler (http_request_t *request);
-const char *sdcard_upload_handler (http_request_t *request);
-const char *sdcard_download_handler (http_request_t *request);
+const char *flashfs_handler (http_request_t *request);
+const char *flashfs_upload_handler (http_request_t *request);
+const char *flashfs_download_handler (http_request_t *request);
 
-#endif // __WEBUI_SDCARD_H__
+#endif // __WEBUI_FLASHFS_H__

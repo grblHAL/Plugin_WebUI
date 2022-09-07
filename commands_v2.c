@@ -1,5 +1,5 @@
 /*
-  webui/commands_v2.c - An embedded CNC Controller with rs274/ngc (g-code) support
+  commands_v2.c - An embedded CNC Controller with rs274/ngc (g-code) support
 
   WebUI backend for https://github.com/luc-github/ESP3D-webui
 
@@ -36,6 +36,7 @@
 #include "../networking/strutils.h"
 #include "../networking/cJSON.h"
 
+#include "args.h"
 #include "webui.h"
 
 #include "grbl/vfs.h"
@@ -177,63 +178,6 @@ static const webui_cmd_binding_t webui_commands[] = {
     { 800, get_firmware_spec,  { WebUIAuth_Guest, WebUIAuth_Guest}, "(json=yes) - display FW Informations in plain/JSON" }
 };
 
-static char *get_arg (uint_fast16_t argc, char **argv, char *arg)
-{
-    char *value = NULL;
-    size_t len = arg ? strlen(arg) : 0;
-
-    if(arg == NULL)
-        value = argc ? *argv : NULL;
-    else if(argc && len) do {
-
-        if(!strncmp(argv[--argc], arg, len))
-            value = argv[argc] + len;
-
-    } while(argc && value == NULL);
-
-    return value;
-}
-
-static bool get_bool_arg (uint_fast16_t argc, char **argv, char *arg)
-{
-    char *value = get_arg(argc, argv, arg);
-
-    if(value)
-        strcaps(value);
-    else if(argc) {
-        char tmp[16];
-        memset(tmp, 0, sizeof(tmp));
-        if(get_arg(argc, argv, strncpy(tmp, arg, strlen(arg) - 1)))
-            return true;
-    }
-
-    return value != NULL && (!strcmp(value, "YES") || !strcmp(value, "TRUE") || !strcmp(value, "1"));
-}
-
-static void trim_arg (uint_fast16_t *argc, char **argv, char *arg)
-{
-    char *found = NULL;
-    size_t len = strlen(arg);
-    uint_fast16_t i = 0;
-
-    if(*argc) do {
-        if(!strncmp(argv[i], arg, len))
-            found = argv[i];
-        else
-            i++;
-
-    } while(i < *argc && found == NULL);
-
-    if(found) {
-        if(i < *argc) do {
-             argv[i] = argv[i + 1];
-             i++;
-        } while(i < *argc);
-
-        (*argc)--;
-    }
-}
-
 static bool json_write_response (cJSON *json, vfs_file_t *file)
 {
     if(json) {
@@ -261,16 +205,16 @@ status_code_t webui_v2_command_handler (uint32_t command, uint_fast16_t argc, ch
 
 //  hal.delay_ms(100, NULL);
 
-    trim_arg(&argc, argv, "pwd=");
+    webui_trim_arg(&argc, argv, "pwd=");
 
-    trim_arg(&argc, argv, "json");
-    trim_arg(&argc, argv, "json=");
+    webui_trim_arg(&argc, argv, "json");
+    webui_trim_arg(&argc, argv, "json=");
 
     uint32_t i = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
 
     while(i) {
         if(webui_commands[--i].id == command) {
-#if WEBUI_AUTH_ENABLE
+#if xWEBUI_AUTH_ENABLE
             if(auth_level < (argc == 0 ? webui_commands[i].auth.read : webui_commands[i].auth.execute)) {
                 if(json)
                     json_write_response(json_create_response_hdr(webui_commands[i].id, false, true, NULL, "Wrong authentication level"), file);
@@ -288,13 +232,17 @@ status_code_t webui_v2_command_handler (uint32_t command, uint_fast16_t argc, ch
     return status;
 }
 
-static status_code_t sys_execute (char *cmd)
+static status_code_t sys_set_setting (setting_id_t id, char *value)
 {
-    char syscmd[LINE_BUFFER_SIZE]; // system_execute_line() needs at least this buffer size!
+    sys_state_t state = state_get();
+    status_code_t retval = Status_OK;
 
-    strcpy(syscmd, cmd);
+    if(state == STATE_IDLE || (state & (STATE_ALARM|STATE_ESTOP|STATE_CHECK_MODE))) {
+        retval = settings_store_setting(id, value);
+    } else
+        retval = Status_IdleError;
 
-    return report_status_message(system_execute_line(syscmd));
+    return retval;
 }
 
 static char *get_setting_value (char *data, setting_id_t id)
@@ -413,8 +361,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
                     param = uitoa((uint32_t)value);
             }
 
-            sprintf(response, "$%d=%s", command->setting.id, param);
-            status = sys_execute(response);
+            status = sys_set_setting(command->setting.id, param);
         }
     } else switch(command->id) {
 
@@ -427,20 +374,17 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
             } else {
                 char *ip;
                 bool found = false;
-                if((ip = get_arg(argc, argv, "IP=")) && status == Status_OK) {
+                if((ip = webui_get_arg(argc, argv, "IP=")) && status == Status_OK) {
                     found = true;
-                    sprintf(response, "$%d=%s", Setting_IpAddress, ip);
-                    status = sys_execute(response);
+                    status = sys_set_setting(Setting_IpAddress, ip);
                 }
-                if((ip = get_arg(argc, argv, "GW=")) && status == Status_OK) {
+                if((ip = webui_get_arg(argc, argv, "GW=")) && status == Status_OK) {
                     found = true;
-                    sprintf(response, "$%d=%s", Setting_Gateway, ip);
-                    status = sys_execute(response);
+                    status = sys_set_setting(Setting_Gateway, ip);
                 }
-                if((ip = get_arg(argc, argv, "MSK=")) && status == Status_OK) {
+                if((ip = webui_get_arg(argc, argv, "MSK=")) && status == Status_OK) {
                     found = true;
-                    sprintf(response, "$%d=%s", Setting_NetMask, ip);
-                    status = sys_execute(response);
+                    status = sys_set_setting(Setting_NetMask, ip);
                 }
                 if(!found)
                     status = Status_Unhandled;
@@ -639,8 +583,8 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
     bool ok = false;
-    char *setting_id = get_arg(argc, argv, "P=");
-    char *value = get_arg(argc, argv, "V=");
+    char *setting_id = webui_get_arg(argc, argv, "P=");
+    char *value = webui_get_arg(argc, argv, "V=");
     status_code_t status = Status_Unhandled;
 
     if(setting_id && value) {
@@ -768,10 +712,12 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
 
     if(argc == 1) {
 
-        bool refresh = !!get_arg(argc, argv, "REFRESH"), release = !!get_arg(argc, argv, "RELEASE");
+        bool refresh = !!webui_get_arg(argc, argv, "REFRESH"), release = !!webui_get_arg(argc, argv, "RELEASE");
 
-        trim_arg(&argc, argv, "REFRESH"); // Mount?
-        trim_arg(&argc, argv, "RELEASE"); // Unmount?
+        UNUSED(refresh);
+
+        webui_trim_arg(&argc, argv, "REFRESH"); // Mount?
+        webui_trim_arg(&argc, argv, "RELEASE"); // Unmount?
 
         msg = argc ? "Unknown parameter" : (release ? "SD card released" : "SD card ok");
 
@@ -784,10 +730,56 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
     return Status_OK;
 }
 
+static vfs_file_t *fwd_file;
+static on_stream_changed_ptr on_stream_changed = NULL;
+static stream_write_ptr pre_stream = NULL;
+
+static void stream_forward (const char *s)
+{
+    vfs_puts(s, fwd_file);
+}
+
+static void stream_changed (stream_type_t type)
+{
+    if(on_stream_changed)
+        on_stream_changed(type);
+
+    if(type != StreamType_File && hal.stream.write == stream_forward) {
+        hal.stream.write = pre_stream;
+        pre_stream = NULL;
+    }
+}
+
+static status_code_t sys_execute (char *cmd, vfs_file_t *file)
+{
+    status_code_t status;
+    char syscmd[LINE_BUFFER_SIZE]; // system_execute_line() needs at least this buffer size!
+
+    if(on_stream_changed == NULL) {
+        on_stream_changed = grbl.on_stream_changed;
+        grbl.on_stream_changed = stream_changed;
+    }
+
+    if((fwd_file = file)) {
+        pre_stream = hal.stream.write;
+        hal.stream.write = stream_forward;
+    }
+
+    strcpy(syscmd, cmd);
+    status = system_execute_line(syscmd);
+
+    if(pre_stream) {
+        hal.stream.write = pre_stream;
+        pre_stream = NULL;
+    }
+
+    return status;
+}
+
 // ESP210
 static status_code_t get_sd_content (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
-    status_code_t status = sys_execute("$F");
+    status_code_t status = sys_execute("$F", file);
 
     return status;
 }
@@ -799,11 +791,11 @@ static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fas
     status_code_t status = Status_IdleError;
 
     if(hal.stream.type != StreamType_SDCard) { // Already streaming a file?
-        char *cmd = get_arg(argc, argv, NULL);
+        char *cmd = webui_get_arg(argc, argv, NULL);
         if(strlen(cmd) > 0) {
             strcpy(response, "$F=");
             strcat(response, cmd);
-            status = sys_execute(response);
+            status = sys_execute(response, NULL);
         }
     }
 
@@ -865,7 +857,7 @@ static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uin
 {
     status_code_t status = Status_OK;
 
-    char *cmd = get_arg(argc, argv, NULL);
+    char *cmd = webui_get_arg(argc, argv, NULL);
     if(!strcmp(cmd, "RESTART") && hal.reboot) {
         hal.stream.write_all("[MSG:Restart ongoing]\r\n");
         hal.delay_ms(1000, hal.reboot); // do the restart after a 1s delay, to allow the response to be sent
@@ -885,7 +877,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
     status_code_t status = Status_IdleError;
 
     if(hal.stream.type != StreamType_FlashFs) { // Already streaming a file?
-        char *cmd = get_arg(argc, argv, NULL);
+        char *cmd = webui_get_arg(argc, argv, NULL);
         if(strlen(cmd) > 0) {
             strcpy(response, "/spiffs");
             strcat(response, cmd);
@@ -899,7 +891,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
 
 static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
-    char *cmd = get_arg(argc, argv, NULL);
+    char *cmd = webui_get_arg(argc, argv, NULL);
     status_code_t status = Status_InvalidStatement;
 
     if(!strcmp(cmd, "FORMAT") && esp_spiffs_mounted(NULL)) {

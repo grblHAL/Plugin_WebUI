@@ -1,5 +1,5 @@
 /*
-  webui/server.c - An embedded CNC Controller with rs274/ngc (g-code) support
+  server.c - An embedded CNC Controller with rs274/ngc (g-code) support
 
   WebUI backend for https://github.com/luc-github/ESP3D-webui
 
@@ -53,12 +53,16 @@
 #include "../sdcard/sdcard.h"
 #endif
 
+#include "flashfs.h"
+
+#include "args.h"
 #include "commands_v2.h"
 #include "commands_v3.h"
 
 #include "../grbl/protocol.h"
 
 #if ESP_PLATFORM
+#include "../esp_webui/fs_spiffs.h"
 #include "../esp_webui/fs_embedded.h"
 #elif WEBUI_INFLASH
 #include "fs_embedded.h"
@@ -76,35 +80,13 @@
 static bool file_is_json = false, is_v3 = false;
 static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
 static driver_setup_ptr driver_setup;
-static driver_reset_ptr driver_reset;
-static on_stream_changed_ptr on_stream_changed;
 static on_report_options_ptr on_report_options;
 static on_execute_realtime_ptr on_execute_realtime;
 static websocket_on_protocol_select_ptr on_protocol_select;
-static stream_write_ptr pre_stream;
-static stream_write_ptr claim_stream;
 
 void data_is_json (void)
 {
     file_is_json = true;
-}
-
-void stream_changed (stream_type_t type)
-{
-    if(on_stream_changed)
-        on_stream_changed(type);
-
-    if(!(type == StreamType_SDCard || type == StreamType_FlashFs) && hal.stream.write == claim_stream)
-        hal.stream.write = pre_stream;
-}
-
-bool claim_output (vfs_file_t **file)
-{
-    pre_stream = hal.stream.write;
-
-    claim_stream = (*file = vfs_open("/stream/qry", "w")) ? hal.stream.write : NULL;
-
-    return claim_stream != NULL;
 }
 
 #if !WEBUI_AUTH_ENABLE
@@ -153,15 +135,13 @@ static const char *command (http_request_t *request)
 
     if((cmd = strstr(data, "[ESP"))) {
 
-        if((file = vfs_open("/stream/qry", "w")) == NULL) {
+        if((file = vfs_open("/ram/qry", "w")) == NULL) {
             busy = false;
             http_set_response_status(request, "500 Internal Server Error");
             return NULL;
         }
 
         status_code_t status;
-
-//        claim_output(&file);
 
         cmd += 4;
 
@@ -227,31 +207,31 @@ static const char *command (http_request_t *request)
 
             uint_fast16_t cmdv = atol(cmd);
 
-            if(cmdv == 800 && argc) {
-
-                uint_fast16_t idx = argc;
+            if(cmdv == 800) {
 
                 is_v3 = false;
 
-                do {
-                    if(!strncmp(argv[--idx], "version", 7))
-                        is_v3 = argv[idx][8] == '3';
-                } while(idx);
+                if(argc) {
 
-                if(hal.rtc.set_datetime) {
- 
-                    struct tm time;
+                    if((tmp = webui_get_arg(argc, argv, "version="))) {
+                        is_v3 = *tmp == '3';
+                        webui_trim_arg(&argc, argv, "version=");
+                    }
 
-                    idx = argc;
-                    tmp = NULL;
+                    if(hal.rtc.set_datetime && (tmp = webui_get_arg(argc, argv, "time="))) {
 
-                    do {
-                        if(!strncmp(argv[--idx], "time", 4))
-                            tmp = &argv[idx][5];
-                    } while(idx && tmp == NULL);
+                        struct tm *time;
 
-                    if(tmp && strtotime(tmp, &time))
-                        hal.rtc.set_datetime(&time);
+                        if(strlen(tmp) > 16) {
+                            tmp[10] = 'T';
+                            tmp[13] = ':';
+                            tmp[16] = ':';
+                        }
+                        time = get_datetime(tmp);
+                        hal.rtc.set_datetime(time);
+                    }
+
+                    webui_trim_arg(&argc, argv, "time=");
                 }
             }
 
@@ -276,79 +256,49 @@ static const char *command (http_request_t *request)
         }
 
         vfs_close(file);
+        busy = false;
 
-    } else {
-
-        if(strlen(data) == 1)
-            websocketd_RxPutC(*data);
-
-        else {
-
-            size_t len;
-            char c, *block = strtok(data, "\n");
-
-            while(block) {
-
-                if((len = strlen(block)) == 2 && *block == 0xC2) {
-                    block++;
-                    len--;
-                }
-
-                while((c = *block++))
-                    websocketd_RxPutC(c);
-
-                if(len > 1)
-                    websocketd_RxPutC(ASCII_LF);
-
-                block = strtok(NULL, "\n");
-            }
-        }
-
-        if((file = vfs_open("/stream/qry.txt", "w")) == NULL) {
-            busy = false;
-            http_set_response_status(request, "500 Internal Server Error");
-            return NULL;
-        }
-
-        vfs_puts("ok", file);
-        vfs_close(file);
+        return file_is_json ? "/ram/qry.json" : "/ram/qry.txt";
     }
+
+    if(strlen(data) == 1)
+        websocketd_RxPutC(*data);
+
+    else {
+
+        size_t len;
+        char c, *block = strtok(data, "\n");
+
+        while(block) {
+
+            if((len = strlen(block)) == 2 && *block == 0xC2) {
+                block++;
+                len--;
+            }
+
+            while((c = *block++))
+                websocketd_RxPutC(c);
+
+            if(len > 1)
+                websocketd_RxPutC(ASCII_LF);
+
+            block = strtok(NULL, "\n");
+        }
+    }
+
+    if((file = vfs_open("/stream/qry.txt", "w")) == NULL) {
+        busy = false;
+        http_set_response_status(request, "500 Internal Server Error");
+        return NULL;
+    }
+
+    vfs_puts("ok", file);
+    vfs_close(file);
 
     busy = false;
 
-    return file_is_json ? "/stream/qry.json" : "/stream/qry.txt";
+    return "/stream/qry.txt";
 }
-
-#if WEBUI_INFLASH
-
-// Virtual spiffs
-
-static void spiffs_on_upload_name_parsed (char *name)
-{
-    static const char *prefix = "/www/";
-
-    size_t len = strlen(name), plen = strlen(prefix);
-    if(*name == '/')
-        plen--;
-
-    if(len + plen <= HTTP_UPLOAD_MAX_PATHLENGTH) {
-        memmove(name + plen, name, len + 1);
-        memcpy(name, prefix, plen);
-    }
-}
-
-static const char *spiffs_upload_handler (http_request_t *request)
-{
-    sdcard_upload_handler(request);
-
-    http_upload_on_filename_parsed(spiffs_on_upload_name_parsed);
-
-    return NULL;
-}
-
-/**/
-
-#endif
 
 #if WIFI_ENABLE && WIFI_SOFTAP
 
@@ -616,20 +566,12 @@ bool is_authorized (http_request_t *req, webui_auth_level_t min_level, vfs_file_
 
 #endif
 
-static void webui_reset (void)
-{
-    driver_reset();
-
-    if(hal.stream.write == claim_stream)
-        hal.stream.write = pre_stream;
-}
-
 static void webui_options (bool newopt)
 {
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.05]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.06]" ASCII_EOL);
 }
 
 static bool webui_setup (settings_t *settings)
@@ -671,6 +613,27 @@ static const char *login_handler_get (http_request_t *request)
 
 #endif
 
+static const char *config_handler_get (http_request_t *request)
+{
+    char data[10];
+    bool is_json = false;
+    vfs_file_t *file;
+
+    if(http_get_param_value(request, "json", data, sizeof(data)))
+        is_json = *data == 'y';
+
+    if((file = vfs_open("/ram/qry", "w")) == NULL) {
+        http_set_response_status(request, "500 Internal Server Error");
+        return NULL;
+    }
+
+    webui_v3_get_system_status(401, 0, NULL, is_json, file);
+
+    vfs_close(file);
+
+    return is_json ? "/ram/qry.json" : "/ram/qry.txt";
+}
+
 static void webui_auto_report (sys_state_t state)
 {
     static uint32_t ms = 0;
@@ -683,7 +646,6 @@ static void webui_auto_report (sys_state_t state)
 
     on_execute_realtime(state);
 }
-
 
 void file_redirect (const char *uri, vfs_file_t **file, const char *mode)
 {
@@ -709,14 +671,8 @@ void webui_init (void)
     driver_setup = hal.driver_setup;
     hal.driver_setup = webui_setup;
 
-    driver_reset = hal.driver_reset;
-    hal.driver_reset = webui_reset;
-
     on_report_options = grbl.on_report_options;
     grbl.on_report_options = webui_options;
-
-    on_stream_changed = grbl.on_stream_changed;
-    grbl.on_stream_changed = stream_changed;
 
     on_execute_realtime = grbl.on_execute_realtime;
     grbl.on_execute_realtime = webui_auto_report;
@@ -732,17 +688,17 @@ void webui_init (void)
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sdfiles",  .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
+        { .uri = "/SD/*",     .method = HTTP_Get,     .handler = sdcard_download_handler }, // v2
         { .uri = "/sdcard/*", .method = HTTP_Get,     .handler = sdcard_download_handler },
         { .uri = "/upload",   .method = HTTP_Post,    .handler = sdcard_upload_handler },
         { .uri = "/sdfiles",  .method = HTTP_Post,    .handler = sdcard_upload_handler },
 #endif
         { .uri = "/login",    .method = HTTP_Get,     .handler = login_handler_get },
+        { .uri = "/config",   .method = HTTP_Get,     .handler = config_handler_get }, // v3
 #if WEBUI_AUTH_ENABLE
         { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
 #endif
-#if WEBUI_INFLASH
-        { .uri = "/files",    .method = HTTP_Post,    .handler = spiffs_upload_handler },
-#endif
+        { .uri = "/files",    .method = HTTP_Post,    .handler = flashfs_upload_handler },
 #if WIFI_ENABLE && WIFI_SOFTAP
         { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
         { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
@@ -761,6 +717,9 @@ void webui_init (void)
 
 #if WEBUI_INFLASH || ESP_PLATFORM
     fs_embedded_mount();
+#endif
+#if ESP_PLATFORM
+    fs_spiffs_mount();
 #endif
 }
 
