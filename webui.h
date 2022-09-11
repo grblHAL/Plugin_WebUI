@@ -36,4 +36,6 @@ typedef enum {
 typedef char session_id_t[21];
 typedef char user_id_t[17];
 
+char *webui_get_sys_path (void); // implemented in server.c
+
 #endif

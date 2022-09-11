@@ -23,7 +23,7 @@
 
 #include "driver.h"
 
-#if WEBUI_ENABLE
+#if WEBUI_ENABLE == 1 || WEBUI_ENABLE == 3
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -45,10 +45,7 @@
 #include "grbl/state_machine.h"
 #include "grbl/motion_control.h"
 
-#if SDCARD_ENABLE
 #include "sdcard/sdcard.h"
-//#include "esp_vfs_fat.h"
-#endif
 
 #if WIFI_ENABLE
 #include "wifi.h"
@@ -102,7 +99,6 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
 static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-#if SDCARD_ENABLE
 static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t global_fs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
@@ -112,14 +108,11 @@ static status_code_t flashfs_action (const struct webui_cmd_binding *command, ui
 static status_code_t sdcard_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t sdcard_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t sdcard_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-#endif
 #if WIFI_ENABLE
 static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 #endif
-#if FLASHFS_ENABLE
 static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-#endif
 
 static const webui_cmd_binding_t webui_commands[] = {
     { 0,   list_commands,      { WebUIAuth_Guest, WebUIAuth_None},  "(<command id>) - display this help" },
@@ -163,9 +156,7 @@ static const webui_cmd_binding_t webui_commands[] = {
     { 140, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "??", { Setting_BlueToothServiceName, -1 } },
 #endif
 // Action commands
-#if SDCARD_ENABLE
     { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
-#endif
     { 220, show_pins,          { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<SNAP>) - show pins" },
     { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
     { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
@@ -174,16 +165,9 @@ static const webui_cmd_binding_t webui_commands[] = {
 #endif
     { 420, get_system_status,  { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display ESP3D current status in plain/JSON" },
     { 444, set_cpu_state,      { WebUIAuth_Admin, WebUIAuth_Admin}, "<RESET|RESTART> - set ESP3D state" },
-#if FLASHFS_ENABLE
     { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
-#endif
-#if SDCARD_ENABLE
     { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control current job" },
-#endif
-#if FLASHFS_ENABLE
     { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format flash filesystem" },
-#endif
-#if SDCARD_ENABLE
     { 715, sdcard_format,      { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format sd filesystem" },
     { 720, flashfs_ls,         { WebUIAuth_Guest, WebUIAuth_Admin}, "<Root> json=<no> pwd=<admin password> - list flash file system" },
     { 730, flashfs_action,     { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on flash file system" },
@@ -191,7 +175,6 @@ static const webui_cmd_binding_t webui_commands[] = {
     { 750, sdcard_action,      { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on sd file system" },
     { 780, global_fs_ls,       { WebUIAuth_Guest, WebUIAuth_Admin}, "<Root> json=<no> pwd=<admin password> - list global file system" },
     { 790, global_fs_action,   { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on global file system" },
-#endif
     { 800, get_firmware_spec,  { WebUIAuth_Guest, WebUIAuth_Guest}, "(json=yes) - display FW Informations in plain/JSON" }
 };
 
@@ -249,7 +232,7 @@ status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, ch
 
     webui_trim_arg(&argc, argv, "pwd=");
 
-    json = webui_get_bool_arg(argc, argv, "json=");
+    json = webui_get_arg(argc, argv, "json=") == NULL || webui_get_bool_arg(argc, argv, "json=");
 
     webui_trim_arg(&argc, argv, "json");
     webui_trim_arg(&argc, argv, "json=");
@@ -550,18 +533,114 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
 }
 
 // Add setting to the JSON response array
-static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fast16_t offset)
+static bool add_bitmap_setting (cJSON *settings, const setting_detail_t *setting)
+{
+    bool ok;
+    cJSON *settingobj;
+
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)))) {
+
+        char opt[50], labeltxt[50], name[30], *label;
+        const setting_group_detail_t *group = setting_get_group_details(setting->group);
+
+        uint32_t i, j = strnumentries(setting->format, ',');
+        for(i = 0; i < j; i++) {
+
+            if(strcmp((label = strgetentry(opt, setting->format, i, ',')), "N/A")) {
+
+                strcpy(labeltxt, label);
+                if((label = strchr(strcpy(name, setting->name), '/')))
+                    *label = '\\';
+
+                ok = !!(settingobj = cJSON_CreateObject());
+
+                ok  = !!cJSON_AddStringToObject(settingobj, "F", strcat(strcat(strcpy(opt, name), "/"), group->name));
+                ok &= !!cJSON_AddStringToObject(settingobj, "P", strcat(strcat(strcpy(opt, uitoa(setting->id)), "#"), uitoa(i)));
+                ok &= !!cJSON_AddStringToObject(settingobj, "T", "B");
+                ok &= !!cJSON_AddStringToObject(settingobj, "V", get_int_setting_value(setting, 0) & (1 << i) ? "1" : "0");
+                ok &= !!cJSON_AddStringToObject(settingobj, "H", labeltxt);
+                if(setting->reboot_required)
+                    ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
+
+                cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
+
+                option = cJSON_CreateObject();
+                cJSON_AddStringToObject(option, "On", "1");
+                cJSON_AddItemToArray(options, option);
+                option = cJSON_CreateObject();
+                cJSON_AddStringToObject(option, "Off", "0");
+                cJSON_AddItemToArray(options, option);
+
+                if(ok)
+                    cJSON_AddItemToArray(settings, settingobj);
+            }
+        }
+    }
+
+    return ok;
+}
+
+
+// Add setting to the JSON response array
+static bool add_axismask_setting (cJSON *settings, const setting_detail_t *setting)
+{
+    bool ok;
+    cJSON *settingobj;
+
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)))) {
+
+        char opt[50];
+        const setting_group_detail_t *group = setting_get_group_details(setting->group);
+
+        uint32_t i;
+        for(i = 0; i < N_AXIS; i++) {
+
+            ok = !!(settingobj = cJSON_CreateObject());
+
+            ok  = !!cJSON_AddStringToObject(settingobj, "F", strcat(strcat(strcpy(opt, setting->name), "/"), group->name));
+            ok &= !!cJSON_AddStringToObject(settingobj, "P", strcat(strcat(strcpy(opt, uitoa(setting->id)), "#"), uitoa(i)));
+            ok &= !!cJSON_AddStringToObject(settingobj, "T", "B");
+            ok &= !!cJSON_AddStringToObject(settingobj, "V", get_int_setting_value(setting, 0) & (1 << i) ? "1" : "0");
+            ok &= !!cJSON_AddStringToObject(settingobj, "H", axis_letter[i]);
+            if(setting->reboot_required)
+                ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
+
+            cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
+
+            option = cJSON_CreateObject();
+            cJSON_AddStringToObject(option, "On", "1");
+            cJSON_AddItemToArray(options, option);
+            option = cJSON_CreateObject();
+            cJSON_AddStringToObject(option, "Off", "0");
+            cJSON_AddItemToArray(options, option);
+
+            if(ok)
+                cJSON_AddItemToArray(settings, settingobj);
+        }
+    }
+
+    return ok;
+}
+
+// Add setting to the JSON response array
+static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
 {
     static const char *tmap[] = { "B", "M", "X", "B", "M", "I", "F", "S", "S", "A", "I", "I" };
 
     bool ok;
     cJSON *settingobj;
-    const setting_detail_t *setting = setting_get_details(id, NULL);
 
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject())))
-    {
+    if(setting->datatype == Format_Bitfield)
+        return add_bitmap_setting(settings, setting);
+
+    if(setting->datatype == Format_AxisMask)
+        return add_axismask_setting(settings, setting);
+
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject()))) {
+
         char opt[50];
-        const setting_group_detail_t *group = setting_get_group_details(setting->group);
+        uint32_t name_ofs = *setting->name == '?' ? 2 : 0;
+        const setting_group_detail_t *group = setting_get_group_details(setting->group + offset);
 
         if(setting->datatype == Format_Bool)
             bit = 0;
@@ -580,7 +659,7 @@ static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fas
         ok &= !!cJSON_AddStringToObject(settingobj, "P", opt);
         ok &= !!cJSON_AddStringToObject(settingobj, "T", tmap[setting->datatype]);
         ok &= !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : get_int_setting_value(setting, offset) & (1 << bit) ? "1" : "0");
-        ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name : strgetentry(opt, setting->format, bit, ','));
+        ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name + name_ofs : strgetentry(opt, setting->format, bit, ','));
         if(setting->reboot_required)
             ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
 
@@ -633,7 +712,7 @@ static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fas
 
     return ok;
 }
-
+/*
 // ESP400
 static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
@@ -689,14 +768,46 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 #if BLUETOOTH_ENABLE
 //      add_setting(settings, Setting_WifiMode, -1, 0);
 #endif
-/*        add_setting(settings, Setting_PulseMicroseconds, -1, 0);
-        add_setting(settings, Setting_AxisStepsPerMM, -1, 0);
-        add_setting(settings, Setting_AxisStepsPerMM, -1, 1);
-        add_setting(settings, Setting_AxisStepsPerMM, -1, 2); */
 
         json_write_response(root, file);
         root = NULL;
     }
+
+    if(root)
+        cJSON_Delete(root);
+
+    return Status_OK;
+}
+*/
+static bool add_setting2 (const setting_detail_t *setting, uint_fast16_t offset, void *settings)
+{
+    return add_setting((cJSON *)settings, setting, -1, offset);
+}
+
+// ESP400
+static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+{
+    bool ok;
+    uint_fast16_t idx;
+    cJSON *root = cJSON_CreateObject(), *settings = NULL;
+    setting_details_t *details = settings_get_details();
+    const setting_detail_t *setting;
+
+    if((ok = root != NULL)) {
+        ok &= !!cJSON_AddStringToObject(root, "cmd", uitoa(command->id));
+        ok &= !!cJSON_AddStringToObject(root, "status", "ok");
+    }
+
+    if((ok &= !!(settings = cJSON_AddArrayToObject(root, "data")))) do {
+        for(idx = 0; idx < details->n_settings; idx++) {
+            setting = &details->settings[idx];
+            if(setting->is_available == NULL || setting->is_available(setting))
+                settings_iterator(setting, add_setting2, settings);
+        }
+    } while((details = details->next));
+
+        json_write_response(root, file);
+        root = NULL;
 
     if(root)
         cJSON_Delete(root);
@@ -777,11 +888,14 @@ static bool add_system_value (cJSON *settings, char *id, char *value)
 }
 
 // ESP420
-
 status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char buf[200];
+    vfs_free_t *mount;
+    vfs_drive_t *sdfs = fs_get_sd_drive(); //, *flashfs = fs_get_flash_drive();
     network_info_t *network = networking_get_info();
+
+    mount = sdfs ? vfs_drive_getfree(sdfs) : NULL;
 
     if(json) {
 
@@ -790,24 +904,19 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
 
         if((ok = !!(root = json_create_response_hdr(command_id, true, true, &data, NULL)))) {
 
-            ok &= add_system_value(data, "chip id", hal.info);
+//            ok &= add_system_value(data, "chip id", "0");
             ok &= add_system_value(data, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
 
-#if SDCARD_ENABLE
-            FATFS *fs;
-            DWORD fre_clust, used_sect, tot_sect;
+            if(mount) {
 
-            ok &= add_system_value(data, "FS type", "SD");
+                ok &= add_system_value(data, "FS type", "SD");
 
-            if(f_getfree("", &fre_clust, &fs) == FR_OK) {
-                tot_sect = (fs->n_fatent - 2) * fs->csize;
-                used_sect = tot_sect - fre_clust * fs->csize;
-                strcpy(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
+                strcpy(buf, btoa(mount->size)); // assuming 512 byte sector size
                 strcat(buf, "/");
-                strcat(buf, btoa(tot_sect << 9));
+                strcat(buf, btoa(mount->used));
                 ok &= add_system_value(data, "FS usage", buf);
             }
-#endif
+
 #if WIFI_ENABLE
             ok &= add_system_value(data, "wifi", "ON");
 #elif ETHERNET_ENABLE
@@ -846,42 +955,45 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
 
                 if(*network->status.mask != '\0')
                     ok &= add_system_value(data, "msk", network->status.mask);
+
+                if(network->status.services.dns)
+                    ok &= add_system_value(data, "DNS", network->status.gateway);
             }
 
 #if WEBUI_AUTH_ENABLE
             ok &= add_system_value(data, "authentication", "ON");
 #endif
 //            ok &= add_system_value(data, "flash", "OFF");
-#if SDCARD_ENABLE
-            ok &= add_system_value(data, "sd", "ON (FatFS)");
-#endif
-            ok &= add_system_value(data, "targetfw", "grblHAL");
+            if(sdfs)
+                strappend(buf, 3, "direct (", sdfs->name, ")");
+            else
+                strcpy(buf, "none");
+            ok &= add_system_value(data, "sd", buf);
+
+            ok &= add_system_value(data, "targetfw", FIRMWARE_TARGET);
             strappend(buf, 3, GRBL_VERSION, "-", uitoa(GRBL_BUILD));
             ok &= add_system_value(data, "FW ver", buf);
-            ok &= add_system_value(data, "FW arch", hal.board);
+            ok &= add_system_value(data, "FW arch", hal.info);
 
             json_write_response(root, file);
         }
     } else {
-        vfs_puts(strappend(buf, 3, "chip id: ", hal.info, WEBUI_EOL), file);
+
+//        vfs_puts(strappend(buf, 3, "chip id: ", "0", WEBUI_EOL), file);
         vfs_puts(strappend(buf, 3, "CPU Freq: ", uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL), "MHz" WEBUI_EOL), file);
-#if SDCARD_ENABLE
-        FATFS *fs;
-        DWORD fre_clust, used_sect, tot_sect;
 
-        vfs_puts("FS type: SD" WEBUI_EOL, file);
+        if(sdfs) {
 
-        if(f_getfree("", &fre_clust, &fs) == FR_OK) {
-            tot_sect = (fs->n_fatent - 2) * fs->csize;
-            used_sect = tot_sect - fre_clust * fs->csize;
+            vfs_puts("FS type: SD" WEBUI_EOL, file);
+
             strcpy(buf, "FS usage: ");
-            strcat(buf, btoa(used_sect << 9)); // assuming 512 byte sector size
+            strcat(buf, btoa(mount->size)); // assuming 512 byte sector size
             strcat(buf, "/");
-            strcat(buf, btoa(tot_sect << 9));
+            strcat(buf, btoa(mount->used));
             strcat(buf, WEBUI_EOL);
             vfs_puts(buf, file);
         }
-#endif
+
 #if WIFI_ENABLE
         vfs_puts("wifi: ON" WEBUI_EOL, file);
 #elif ETHERNET_ENABLE
@@ -913,30 +1025,31 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
 
             if(*network->status.mask != '\0')
                 vfs_puts(strappend(buf, 3, "msk: ", network->status.mask, WEBUI_EOL), file);
+
+            if(network->status.services.dns)
+                vfs_puts(strappend(buf, 3, "DNS: ", network->status.gateway, WEBUI_EOL), file);
         }
 
 #if WEBUI_AUTH_ENABLE
         vfs_puts("authentication: ON" WEBUI_EOL, file);
 #endif
 //          vfs_puts("flash: OFF" WEBUI_EOL);
-#if SDCARD_ENABLE
-        vfs_puts("sd: ON (FatFS)" WEBUI_EOL, file);
-#endif
-        vfs_puts("targetfw: grblHAL" WEBUI_EOL, file);
+        if(sdfs)
+            vfs_puts(strappend(buf, 4, "sd direct (", sdfs->name, ")" WEBUI_EOL), file);
+        else
+            vfs_puts("sd: none" WEBUI_EOL, file);
+        vfs_puts("targetfw: " FIRMWARE_TARGET WEBUI_EOL, file);
         vfs_puts(strappend(buf, 5, "FW ver: ", GRBL_VERSION, "-", uitoa(GRBL_BUILD), WEBUI_EOL), file);
-        vfs_puts(strappend(buf, 3, "FW arch: ", hal.board, WEBUI_EOL), file);
+        vfs_puts(strappend(buf, 3, "FW arch: ", hal.info, WEBUI_EOL), file);
     }
 
     return Status_OK;
 }
 
-
 static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return webui_v3_get_system_status(command->id, argc, argv, json, file);
 }
-
-#if SDCARD_ENABLE
 
 // ESP701
 static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
@@ -1006,14 +1119,14 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
     return Status_OK;
 }
 
-#endif
-
 // ESP800
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
-    char buf[200];
+    char buf[200], hostpath[32];
     network_info_t *network = networking_get_info();
     vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive();
+
+    vfs_fixpath(strcpy(hostpath, webui_get_sys_path()));
 
     if(json) {
 
@@ -1047,9 +1160,9 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
 #endif
             if(flashfs)
                 ok &= !!cJSON_AddStringToObject(data, "FlashFileSystem", flashfs->name);
-            ok &= !!cJSON_AddStringToObject(data, "HostPath", "www");
-            ok &= !!cJSON_AddStringToObject(data, "WebUpdate", "Disabled");
-            ok &= !!cJSON_AddStringToObject(data, "FileSystem", "none");
+            ok &= !!cJSON_AddStringToObject(data, "HostPath", hostpath);
+            ok &= !!cJSON_AddStringToObject(data, "WebUpdate", flashfs ? "Enabled" : "Disabled");
+            ok &= !!cJSON_AddStringToObject(data, "FileSystem", flashfs ? "flash" : "none");
             if(hal.rtc.get_datetime) {
                 struct tm time;
                 ok &= !!cJSON_AddStringToObject(data, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
@@ -1081,10 +1194,11 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
         vfs_puts("WiFi mode:STA" WEBUI_EOL, file);
 #endif
 #endif
+        vfs_puts("WebUpdate:Enabled" WEBUI_EOL, file);
         if(flashfs)
             vfs_puts(strappend(buf, 3, "FlashFileSystem:", flashfs->name, WEBUI_EOL), file);
 
-        vfs_puts("HostPath:www" WEBUI_EOL, file);
+        vfs_puts(strappend(buf, 3, "HostPath:", hostpath, WEBUI_EOL), file);
 
         if(hal.rtc.get_datetime) {
             struct tm time;
@@ -1253,8 +1367,6 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
     return Status_OK;
 }
 
-#if SDCARD_ENABLE
-
 // ESP200
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
@@ -1283,8 +1395,6 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
 
     return Status_OK;
 }
-
-#endif
 
 // ESP220
 static const char *get_pinname (pin_function_t function)
@@ -1478,8 +1588,6 @@ static status_code_t fs_action (const struct webui_cmd_binding *command, uint_fa
     return Status_OK; // for now
 }
 
-#if FLASHFS_ENABLE
-
 // ESP700
 static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
@@ -1528,7 +1636,6 @@ static status_code_t flash_format (const struct webui_cmd_binding *command, uint
 
     return Status_OK;
 }
-#endif
 
 // ESP715
 static status_code_t sdcard_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)

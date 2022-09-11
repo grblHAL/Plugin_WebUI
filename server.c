@@ -49,7 +49,7 @@
 #endif
 
 #if SDCARD_ENABLE
-#include "./sdcard.h"
+#include "sdfs.h"
 #include "../sdcard/sdcard.h"
 #endif
 
@@ -58,6 +58,7 @@
 #include "args.h"
 #include "commands_v2.h"
 #include "commands_v3.h"
+#include "fs_handlers.h"
 
 #include "../grbl/protocol.h"
 
@@ -78,11 +79,17 @@
 #include "grbl/vfs.h"
 
 static bool file_is_json = false, is_v3 = false;
+static char sys_path[32] = "/"; // Directory where index.html.gz was found
 static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
 static driver_setup_ptr driver_setup;
 static on_report_options_ptr on_report_options;
 static on_execute_realtime_ptr on_execute_realtime;
 static websocket_on_protocol_select_ptr on_protocol_select;
+
+char *webui_get_sys_path (void)
+{
+    return sys_path;
+}
 
 void data_is_json (void)
 {
@@ -235,6 +242,8 @@ static const char *command (http_request_t *request)
                 }
             }
 
+#if WEBUI_ENABLE == 1
+
             if(!is_v3)
                 is_v3 = cmdv == 701;
 
@@ -242,6 +251,12 @@ static const char *command (http_request_t *request)
                 ok &= (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
             else
                 ok &= (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+
+#elif WEBUI_ENABLE == 2
+            ok &= (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+#else
+            ok &= (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+#endif
 
 #if WEBUI_AUTH_ENABLE
             if(status == Status_AuthenticationRequired || status == Status_AccessDenied) {
@@ -647,19 +662,55 @@ static void webui_auto_report (sys_state_t state)
     on_execute_realtime(state);
 }
 
-void file_redirect (const char *uri, vfs_file_t **file, const char *mode)
+bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mode)
 {
-    if(!strcmp(uri, "/favicon.ico")) {
-        if((*file = vfs_open("/www/favicon.ico", mode)) == NULL)
-            *file = vfs_open("/embedded/favicon.ico", mode);
-    } else if(!strcmp(uri, "/preferences.json"))
-        *file = vfs_open("/www/preferences.json", mode);
-#if WIFI_ENABLE && WIFI_SOFTAP
-    else if(!strcmp(uri, "/ap_login.html")) {
-        if((*file = vfs_open("/www/ap_login.html", mode)) == NULL)
-            *file = vfs_open("/embedded/ap_login.html", mode);
-    }
+    if(*path == '\0' || (*file = vfs_open(strcat(path, uri + 1), mode)) == NULL) {
+#if WEBUI_INFLASH
+        if((*file = vfs_open(strcat(strcpy(path, "/www"), uri), mode)) == NULL)
+            *file = vfs_open(strcat(strcpy(path, "/embedded"), uri), mode);
+#else
+        *file = vfs_open(strcat(strcpy(path, "/www"), uri), mode);
 #endif
+    }
+
+    return file != NULL;
+}
+
+const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t **file, const char *mode)
+{
+    char path[32];
+    vfs_drive_t *flashfs = fs_get_flash_drive();
+
+    if(flashfs)
+        strcpy(path, flashfs->path);
+    else
+        *path = '\0';
+
+    if(!strcmp(uri, "/")) {
+
+#if WEBUI_INFLASH
+        char fallback[5];
+        if(http_get_param_value(request, "forcefallback", fallback, sizeof(fallback)) != NULL && !strcmp(fallback, "yes")) {
+            if((*file = vfs_open("/embedded/index.html.gz", mode)))
+                uri = "/index.html.gz";
+            return uri;
+        }
+#endif
+
+        if(file_search(path, "/index.html.gz", file, mode)) {
+            char *s = strstr(path, "index.html");
+            if(s)
+                *s = '\0';
+            strcpy(sys_path, path);
+            uri = "/index.html.gz";
+        }
+    } else if(!strcmp(uri, "/favicon.ico") || !strcmp(uri, "/preferences.json"))
+        file_search(strcpy(path, sys_path), uri, file, mode);
+#if WIFI_ENABLE && WIFI_SOFTAP
+    else if(!strcmp(uri, "/ap_login.html"))
+        file_search(path, uri, file, mode);
+#endif
+    return uri;
 }
 
 void webui_init (void)
@@ -682,33 +733,98 @@ void webui_init (void)
 
     httpd.on_open_file_failed = file_redirect;
 
+#if WEBUI_ENABLE == 1 // All WebUI versions supported
+
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
-#if SDCARD_ENABLE
+  #if SDCARD_ENABLE
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
-        { .uri = "/sdfiles",  .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
         { .uri = "/SD/*",     .method = HTTP_Get,     .handler = sdcard_download_handler }, // v2
         { .uri = "/sdcard/*", .method = HTTP_Get,     .handler = sdcard_download_handler },
         { .uri = "/upload",   .method = HTTP_Post,    .handler = sdcard_upload_handler },
+        { .uri = "/sdfiles",  .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sdfiles",  .method = HTTP_Post,    .handler = sdcard_upload_handler },
-#endif
+  #endif
+        { .uri = "/files",    .method = HTTP_Get,     .handler = flashfs_handler },
+        { .uri = "/files",    .method = HTTP_Post,    .handler = flashfs_upload_handler },
         { .uri = "/login",    .method = HTTP_Get,     .handler = login_handler_get },
         { .uri = "/config",   .method = HTTP_Get,     .handler = config_handler_get }, // v3
-#if WEBUI_AUTH_ENABLE
+  #if WEBUI_AUTH_ENABLE
         { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
-#endif
-        { .uri = "/files",    .method = HTTP_Post,    .handler = flashfs_upload_handler },
-#if WIFI_ENABLE && WIFI_SOFTAP
+  #endif
+  #if WIFI_ENABLE && WIFI_SOFTAP
         { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
         { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
         { .uri = "/wifi",     .method = HTTP_Delete,  .handler  = wifi_disconnect_handler },
-  #if CORS_ENABLE
+   #if CORS_ENABLE
         { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
-  #endif
+   #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
-#endif
+  #endif
     };
+
+#elif WEBUI_ENABLE == 2 // WebUI v2
+
+    static const httpd_uri_handler_t cgi[] = {
+        { .uri = "/command",  .method = HTTP_Get,     .handler = command },
+  #if SDCARD_ENABLE
+        { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
+        { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
+        { .uri = "/SD/*",     .method = HTTP_Get,     .handler = sdcard_download_handler }, // v2
+        { .uri = "/sdcard/*", .method = HTTP_Get,     .handler = sdcard_download_handler },
+        { .uri = "/upload",   .method = HTTP_Post,    .handler = sdcard_upload_handler },
+        { .uri = "/sdfiles",  .method = HTTP_Get,     .handler = sdcard_handler },
+        { .uri = "/sdfiles",  .method = HTTP_Post,    .handler = sdcard_upload_handler },
+  #endif
+        { .uri = "/files",    .method = HTTP_Get,     .handler = flashfs_handler },
+        { .uri = "/files",    .method = HTTP_Post,    .handler = flashfs_upload_handler },
+        { .uri = "/login",    .method = HTTP_Get,     .handler = login_handler_get },
+  #if WEBUI_AUTH_ENABLE
+        { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
+  #endif
+  #if WIFI_ENABLE && WIFI_SOFTAP
+        { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
+        { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
+        { .uri = "/wifi",     .method = HTTP_Delete,  .handler  = wifi_disconnect_handler },
+   #if CORS_ENABLE
+        { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
+   #endif
+        { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
+  #endif
+    };
+
+#else // WebUI v3
+
+    static const httpd_uri_handler_t cgi[] = {
+        { .uri = "/command",  .method = HTTP_Get,     .handler = command },
+  #if SDCARD_ENABLE
+        { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
+        { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
+        { .uri = "/upload",   .method = HTTP_Post,    .handler = sdcard_upload_handler },
+        { .uri = "/sdfiles",  .method = HTTP_Get,     .handler = sdcard_handler },
+        { .uri = "/sdfiles",  .method = HTTP_Post,    .handler = sdcard_upload_handler },
+  #endif
+        { .uri = "/files",    .method = HTTP_Get,     .handler = flashfs_handler },
+        { .uri = "/files",    .method = HTTP_Post,    .handler = flashfs_upload_handler },
+        { .uri = "/login",    .method = HTTP_Get,     .handler = login_handler_get },
+        { .uri = "/config",   .method = HTTP_Get,     .handler = config_handler_get },
+//        { .uri = "/updatefw", .method = HTTP_Post,    .handler = sdcard_upload_handler },
+  #if WEBUI_AUTH_ENABLE
+        { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
+  #endif
+  #if WIFI_ENABLE && WIFI_SOFTAP
+        { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
+        { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
+        { .uri = "/wifi",     .method = HTTP_Delete,  .handler  = wifi_disconnect_handler },
+   #if CORS_ENABLE
+        { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
+   #endif
+        { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
+  #endif
+    };
+
+#endif // WEBUI_ENABLE
 
     httpd_register_uri_handlers(cgi, sizeof(cgi) / sizeof(httpd_uri_handler_t));
 
@@ -718,7 +834,7 @@ void webui_init (void)
 #if WEBUI_INFLASH || ESP_PLATFORM
     fs_embedded_mount();
 #endif
-#if ESP_PLATFORM
+#if xESP_PLATFORM
     fs_spiffs_mount();
 #endif
 }

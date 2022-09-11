@@ -62,8 +62,10 @@ static bool add_file (cJSON *files, char *path, vfs_dirent_t *file)
     if((ok = (fileinfo = cJSON_CreateObject()) != NULL))
     {
         ok = !!cJSON_AddStringToObject(fileinfo, "name", file->name);
+#if WEBUI_ENABLE < 3
         ok &= !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
         ok &= !!cJSON_AddStringToObject(fileinfo, "datetime", "");
+#endif
         if(file->st_mode.directory)
             ok &= !!cJSON_AddNumberToObject(fileinfo, "size", -1.0);
         else
@@ -194,7 +196,8 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
     bool ok = false;
     char path[100];
     char filename[100], fullname[100];
-    char action[20], status[sizeof(filename) + 50];
+    char action[20], status[sizeof(filename) + 50], quiet[4];
+    uint_fast16_t pathlen;
 
     if(drive == NULL) {
         http_set_response_status(request, "400 Bad Request");
@@ -205,26 +208,32 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 //        return ESP_OK;
 
     *status = *path = '\0';
+    pathlen = strlen(drive->path);
+    strcpy(path, drive->path);
 
-    http_get_param_value(request, "path", path, sizeof(path));
+    http_get_param_value(request, "path", path + pathlen, sizeof(path) - pathlen);
     http_get_param_value(request, "filename", filename, sizeof(filename));
     http_get_param_value(request, "action", action, sizeof(action));
+    http_get_param_value(request, "quiet", quiet, sizeof(quiet));
+ 
+    pathlen = strlen(path);
+    if(pathlen > 1 && path[pathlen - 1] != '/') {
+        path[pathlen] = '/';
+        path[pathlen + 1] = '\0';
+    }
 
     vfs_file_t *file = vfs_open("/ram/qry.json", "w");
 
     if(*action && *filename) {
 
         vfs_stat_t file;
-        uint_fast16_t pathlen = strlen(path);
-
-        if(pathlen > 1 && path[pathlen - 1] != '/') {
-            path[pathlen] = '/';
-            path[pathlen + 1] = '\0';
-        }
 
 //        char *fullname = ((file_server_data_t *)req->user_ctx)->scratch;
 
-        strcat(strcpy(fullname, path), filename);
+        if(strlen(drive->path) > 1 || *drive->path != '/')
+            strcat(strcat(strcpy(fullname, drive->path), "/"), filename);
+        else
+            strcat(strcpy(fullname, path), filename);
 
         switch(strlookup(action, "delete,createdir,deletedir", ',')) {
 
@@ -273,7 +282,9 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
     if(*status == '\0')
         strcat(status, "ok");
 
-    if(!(ok = _fs_ls(request, path, status, file, drive))) {
+    ok = *quiet == 'y' || _fs_ls(request, path, status, file, drive);
+
+    if(!ok) {
         http_set_response_status(request, "500 Internal Server Error");
         vfs_puts("Failed to generate response", file);
     }
@@ -326,17 +337,25 @@ static err_t fs_post_receive_data (http_request_t *request, struct pbuf *p)
 
 static void fs_post_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
 {
+    vfs_drive_t *drive = NULL;
     vfs_file_t *file = vfs_open("/ram/qry.json", "w");
-
     file_upload_t *upload = (file_upload_t *)request->private_data;
 
-    if(upload)
+    if(upload) {
+
         strncpy(response_uri, upload->path ? upload->path : "/", response_uri_len);
+
+        char *s;
+        if((s = strrchr(upload->filename, '/')))
+            *(++s) = '\0';
+
+        drive = vfs_get_drive(upload->filename);
+    }
 
     if(*response_uri == '\0')
         strcpy(response_uri, "/");
 
-    _fs_ls(request, response_uri, "ok", file, NULL);
+    _fs_ls(request, upload ? upload->filename : response_uri, "ok", file, drive);
 
     vfs_close(file);
 
@@ -349,22 +368,45 @@ static void fs_post_finished (http_request_t *request, char *response_uri, u16_t
     strcpy(response_uri, "/ram/qry.json");
 }
 
+static void fs_on_upload_name_parsed (char *name, void *data)
+{
+    char *drive_path = (char *)data;
+
+    size_t len = strlen(name), plen = strlen(drive_path);
+    if(*name == '/')
+        plen--;
+
+    if(len + plen <= HTTP_UPLOAD_MAX_PATHLENGTH) {
+        memmove(name + plen, name, len + 1);
+        memcpy(name, drive_path, plen);
+    }
+}
+
 const char *fs_upload_handler (http_request_t *request, vfs_drive_t *drive)
 {
+    static char drive_path[32];
+
     int len;
-    bool ok;
     char ct[200], *boundary;
+    file_upload_t *upload = NULL;
 
     if((len = http_get_header_value_len (request, "Content-Type")) >= 0) {
         http_get_header_value (request, "Content-Type", ct, len);
-        if((ok = (boundary = strstr(ct, "boundary=")))) {
+        if((boundary = strstr(ct, "boundary="))) {
             boundary += strlen("boundary=");
-            ok = http_upload_start(request, boundary, true);
+            upload = http_upload_start(request, boundary, true);
+            if(upload && drive) {
+                strcpy(drive_path, drive->path);
+                http_upload_on_filename_parsed(upload, fs_on_upload_name_parsed, drive_path);
+            }
         }
     }
 
-    request->post_receive_data = fs_post_receive_data;
-    request->post_finished = fs_post_finished;
+    if(upload) {
+        request->post_receive_data = fs_post_receive_data;
+        request->post_finished = fs_post_finished;
+    } else
+        http_set_response_status(request, "400 Bad Request");
 
     return NULL;
 }
@@ -421,7 +463,7 @@ vfs_drive_t *fs_get_flash_drive (void)
     if((dh = vfs_drives_open()))
     {
         while((drive = vfs_drives_read(dh))) {
-            if(!strcmp(drive->name, "spiffs")) {
+            if(!strcmp(drive->name, "spiffs") || !strcmp(drive->name, "littlefs")) {
                 memcpy(&flash, drive, sizeof(vfs_drive_t));
                 break;
             }

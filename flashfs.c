@@ -49,27 +49,11 @@ const char *flashfs_download_handler (http_request_t *request)
     return fs_download_handler(request, fs_get_flash_drive());
 }
 
-/*
-static void flashfs_on_upload_name_parsed (char *name)
-{
-    static const char *prefix = "/www/";
-
-    size_t len = strlen(name), plen = strlen(prefix);
-    if(*name == '/')
-        plen--;
-
-    if(len + plen <= HTTP_UPLOAD_MAX_PATHLENGTH) {
-        memmove(name + plen, name, len + 1);
-        memcpy(name, prefix, plen);
-    }
-}
-*/
-
 const char *flashfs_upload_handler (http_request_t *request)
 {
-//    http_upload_on_filename_parsed(flashfs_on_upload_name_parsed);
+    fs_upload_handler(request, fs_get_flash_drive());
 
-    return fs_upload_handler(request, fs_get_flash_drive());
+    return NULL;
 }
 
 #endif // WEBUI_ENABLE &&  flashfs_ENABLE

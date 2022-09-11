@@ -23,7 +23,7 @@
 
 #include "driver.h"
 
-#if WEBUI_ENABLE
+#if WEBUI_ENABLE == 1 || WEBUI_ENABLE == 2
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -722,7 +722,7 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
         msg = argc ? "Unknown parameter" : (release ? "SD card released" : "SD card ok");
 
     } else
-        msg = hal.stream.type == StreamType_SDCard ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
+        msg = hal.stream.type == StreamType_File ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
 
     vfs_puts(msg, file);
     vfs_puts(WEBUI_EOL, file);
@@ -760,10 +760,8 @@ static status_code_t sys_execute (char *cmd, vfs_file_t *file)
         grbl.on_stream_changed = stream_changed;
     }
 
-    if((fwd_file = file)) {
-        pre_stream = hal.stream.write;
-        hal.stream.write = stream_forward;
-    }
+    pre_stream = hal.stream.write;
+    hal.stream.write = stream_forward;
 
     strcpy(syscmd, cmd);
     status = system_execute_line(syscmd);
@@ -787,16 +785,12 @@ static status_code_t get_sd_content (const struct webui_cmd_binding *command, ui
 // ESP220
 static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
-    char response[50];
     status_code_t status = Status_IdleError;
 
-    if(hal.stream.type != StreamType_SDCard) { // Already streaming a file?
+    if(hal.stream.type != StreamType_File) { // Already streaming a file?
         char *cmd = webui_get_arg(argc, argv, NULL);
-        if(strlen(cmd) > 0) {
-            strcpy(response, "$F=");
-            strcat(response, cmd);
-            status = sys_execute(response, NULL);
-        }
+        if(strlen(cmd) > 0)
+            status = stream_file(state_get(), cmd);
     }
 
     vfs_puts(status == Status_OK ? "ok" : "error:cannot stream file", file);
@@ -876,12 +870,12 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
 {
     status_code_t status = Status_IdleError;
 
-    if(hal.stream.type != StreamType_FlashFs) { // Already streaming a file?
+    if(hal.stream.type != StreamType_File) { // Already streaming a file?
         char *cmd = webui_get_arg(argc, argv, NULL);
         if(strlen(cmd) > 0) {
             strcpy(response, "/spiffs");
             strcat(response, cmd);
-            status = report_status_message(flashfs_stream_file(response));
+            status = stream_file(state_get(), cmd);
         }
     }
     vfs_puts(status == Status_OK ? "ok" : "error:cannot stream file", file);

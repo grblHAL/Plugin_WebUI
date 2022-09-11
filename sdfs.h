@@ -1,5 +1,5 @@
 /*
-  sdcard.c - An embedded CNC Controller with rs274/ngc (g-code) support
+  sdfs.h - An embedded CNC Controller with rs274/ngc (g-code) support
 
   Webserver backend - sdcard handling
 
@@ -24,31 +24,15 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef ARDUINO
-#include "../driver.h"
-#else
-#include "driver.h"
-#endif
+#ifndef __WEBUI_SDCARD_H__
+#define __WEBUI_SDCARD_H__
 
-#if WEBUI_ENABLE && SDCARD_ENABLE
+#include "webui.h"
 
 #include "../networking/httpd.h"
 
-#include "fs_handlers.h"
+const char *sdcard_handler (http_request_t *request);
+const char *sdcard_upload_handler (http_request_t *request);
+const char *sdcard_download_handler (http_request_t *request);
 
-const char *sdcard_handler (http_request_t *request)
-{
-    return fs_action_handler(request, fs_get_sd_drive());
-}
-
-const char *sdcard_download_handler (http_request_t *request)
-{
-    return fs_download_handler(request, fs_get_sd_drive());
-}
-
-const char *sdcard_upload_handler (http_request_t *request)
-{
-    return fs_upload_handler(request, fs_get_sd_drive());
-}
-
-#endif // WEBUI_ENABLE &&  SDCARD_ENABLE
+#endif // __WEBUI_SDCARD_H__
