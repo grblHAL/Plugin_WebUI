@@ -79,7 +79,7 @@
 #include "grbl/vfs.h"
 
 static bool file_is_json = false, is_v3 = false;
-static char sys_path[32] = "/"; // Directory where index.html.gz was found
+static char sys_path[32] = ""; // Directory where index.html.gz was found
 static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
 static driver_setup_ptr driver_setup;
 static on_report_options_ptr on_report_options;
@@ -420,9 +420,9 @@ static const char *wifi_scan_handler (http_request_t *request)
                 http_set_response_header(req, "Access-Control-Allow-Origin", "*");
                 http_set_response_header(req, "Access-Control-Allow-Methods", "POST,GET,OPTIONS");
 #endif
-                vfs_file_t *response = vfs_open("/ram/data.json", "w");
+                vfs_file_t *file = vfs_open("/ram/data.json", "w");
                 vfs_puts(resp, file);
-                vfs_close(response);
+                vfs_close(file);
 
                 free(resp);
             }
@@ -484,11 +484,9 @@ static void wifi_login_receive_finished (http_request_t *request, char *response
     } else
         http_set_response_status(request, "400 Bad Request");
 
-    vfs_file_t *response = vfs_open("/ram/data.txt", "w");
-
+    vfs_file_t *file = vfs_open("/ram/data.txt", "w");
     vfs_puts("Connecting...", file);
-
-    vfs_close(response);
+    vfs_close(file);
 
     strcpy(response_uri, "/ram/data.txt");
 }
@@ -580,14 +578,6 @@ bool is_authorized (http_request_t *req, webui_auth_level_t min_level, vfs_file_
 #if WEBUI_AUTH_ENABLE
 
 #endif
-
-static void webui_options (bool newopt)
-{
-    on_report_options(newopt);
-
-    if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.06]" ASCII_EOL);
-}
 
 static bool webui_setup (settings_t *settings)
 {
@@ -705,12 +695,20 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
             uri = "/index.html.gz";
         }
     } else if(!strcmp(uri, "/favicon.ico") || !strcmp(uri, "/preferences.json"))
-        file_search(strcpy(path, sys_path), uri, file, mode);
+        file_search(strcpy(path, *sys_path == '\0' ? "/" : sys_path), uri, file, mode);
 #if WIFI_ENABLE && WIFI_SOFTAP
     else if(!strcmp(uri, "/ap_login.html"))
         file_search(path, uri, file, mode);
 #endif
     return uri;
+}
+
+static void webui_options (bool newopt)
+{
+    on_report_options(newopt);
+
+    if(!newopt)
+        hal.stream.write("[PLUGIN:WebUI v0.07]" ASCII_EOL);
 }
 
 void webui_init (void)

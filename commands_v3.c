@@ -806,11 +806,10 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
         }
     } while((details = details->next));
 
+    if(root) {
         json_write_response(root, file);
-        root = NULL;
-
-    if(root)
         cJSON_Delete(root);
+    }
 
     return Status_OK;
 }
@@ -1122,11 +1121,14 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
 // ESP800
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
-    char buf[200], hostpath[32];
+    char buf[200], hostpath[16];
     network_info_t *network = networking_get_info();
     vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive();
 
-    vfs_fixpath(strcpy(hostpath, webui_get_sys_path()));
+    strcpy(hostpath, webui_get_sys_path());
+    if(*hostpath == '\0')
+        strcpy(hostpath, sdfs && flashfs == NULL ? "/www" : "/");
+    vfs_fixpath(hostpath);
 
     if(json) {
 
@@ -1158,10 +1160,9 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
             ok &= !!cJSON_AddStringToObject(data, "WiFiMode", "STA");
   #endif
 #endif
-            if(flashfs)
-                ok &= !!cJSON_AddStringToObject(data, "FlashFileSystem", flashfs->name);
+            ok &= !!cJSON_AddStringToObject(data, "FlashFileSystem", flashfs ? flashfs->name : "none");
             ok &= !!cJSON_AddStringToObject(data, "HostPath", hostpath);
-            ok &= !!cJSON_AddStringToObject(data, "WebUpdate", flashfs ? "Enabled" : "Disabled");
+            ok &= !!cJSON_AddStringToObject(data, "WebUpdate", /*flashfs || sdfs ? "Enabled" :*/ "Disabled");
             ok &= !!cJSON_AddStringToObject(data, "FileSystem", flashfs ? "flash" : "none");
             if(hal.rtc.get_datetime) {
                 struct tm time;

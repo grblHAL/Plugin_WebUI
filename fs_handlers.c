@@ -1,7 +1,7 @@
 /*
   fs_handlers.c - An embedded CNC Controller with rs274/ngc (g-code) support
 
-  Webserver backend - sdcard handling
+  WebUI backend - file handling
 
   Part of grblHAL
 
@@ -83,7 +83,7 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 
     bool subdirs = false;
 
-   if((dir = vfs_opendir(path)) == NULL)
+    if((dir = vfs_opendir(path)) == NULL)
         return vfs_errno;
 
    // Pass 1: Scan files
@@ -167,6 +167,7 @@ bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
 
     return ok;
 }
+
 static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, vfs_drive_t *drive)
 {
     bool ok;
@@ -235,7 +236,7 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
         else
             strcat(strcpy(fullname, path), filename);
 
-        switch(strlookup(action, "delete,createdir,deletedir", ',')) {
+        switch(strlookup(action, "delete,createdir,deletedir,list", ',')) {
 
             case 0: // delete
                 if(vfs_stat(fullname, &file) == 0) {
@@ -261,13 +262,15 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
                 if(strlen(fullname) == 1)
                     strcpy(status, "Cannot delete root directory!");
                 else if(vfs_stat(fullname, &file) == 0) {
-//                    if(sd_rmdir(fullname))
                       if(vfs_rmdir(fullname))
                         sprintf(status, "%s deleted", filename);
                     else
                         sprintf(status, "Error deleting %s!", filename);
                 } else
                     sprintf(status, "%s does not exist!", filename);
+                break;
+
+            case 3: // list - do nothing here
                 break;
 
             default:
