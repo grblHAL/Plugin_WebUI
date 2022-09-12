@@ -1,36 +1,39 @@
 ## WebUI plugin
 
-News \(20220719\): Added initial and experimental support for [WebUI v3](https://github.com/luc-github/ESP3D-WEBUI/discussions/94#discussioncomment-2861616).  
-Copy the files in the [www/v3](www/v3) folder to the _www_ folder on your SD card to activate. Requires grblHAL build 20220722 or later.
-
----
-
 Adds [ESP32-WEBUI](https://github.com/luc-github/ESP3D-webui) support for some networking capable boards and drivers.
 
-Under development and partially implemented. Support for authentication is not yet ready and there is no support for a flash based file system \(and I do not plan to add that\).
+Under development and partially implemented.  
 
 This plugin sits on top of a heavily modified [lwIP](http://savannah.nongnu.org/projects/lwip/) raw mode http daemon.  
 It requires lwIP version 2.1.0 or later, however 2.0.x can be patched to make it work.
 
 The following drivers can be used with this plugin:
 
-| Driver                                                            |lwIP version|patch required|
-|-------------------------------------------------------------------|------------|--------------|
-| [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           |
-| [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          |
-| [RP2040 \(Pi Pico W\)](https://github.com/grblHAL/RP2040)         | 2.1.1      | no           |
-| [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           |
-| [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          |
+| Driver                                                            |lwIP version|patch required| FlashFS  |
+|-------------------------------------------------------------------|------------|--------------|----------|
+| [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          | littlefs |
+| [RP2040 \(Pi Pico W\)](https://github.com/grblHAL/RP2040)         | 2.1.1      | no           | littlefs |
+| [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           | littlefs |
+| [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           | no       |
+| [STM32H7xx](https://github.com/dresco/STM32H7xx)                  | ?          | no           | TBA      |
+| [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          | no       |
 
 #### Installation:
-
-Copy the provided [www](./www) folder to the root of the SD card.
 
 Enable WebUI support by uncommenting `#define WEBUI_ENABLE 1` in _my_machine.h_ and recompile/reflash.
 
 Ensure `$360` \(HTTP port\) is set to `80`, `$307` \(Websocket port\) is set to `81` and `$70` has flags set to enable both the http and websocket daemons. `15` is a safe value. Reboot.
 
-Enter the controller IP address in a browser window, if all is well the WebUI will then be loaded. Tip: Use `$I` to find the IP address if dynamically assigned.
+For drivers with FlashFS support \(see table above\) enter `<ip address>/` or `<ip address>/?forcefallback=yes` if it is for an update.  
+Replace `<ip address>` with the controller IP address. Tip: Use `$I` to find the IP address if dynamically assigned. 
+Then click on the _Interface_ top menu item in the page shown and navigate to the _dist/CNC/grblHAL_ folder and download _index.html.gz_.
+You may download _index.html.gz_ directly via this [link](https://raw.githubusercontent.com/luc-github/ESP3D-WEBUI/3.0/dist/CNC/GRBLHal/index.html.gz).
+Upload the file via the upload button in the _FileSystem_ panel.
+
+For drivers without FlashFS support download directly or from [this page](https://github.com/luc-github/ESP3D-WEBUI/tree/3.0/dist/CNC/GRBLHal), create a _www_ folder on the SD card and copy the download file there.
+If the SD card is mounted in the controller then the folder can be created and the file copied either via ftp or WebDAV provided the protocol to be used has been activated.
+
+Finally enter the controller IP address in a browser window, if all is well the WebUI will then be loaded.
 
 #### lwIP patch:
 

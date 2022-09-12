@@ -806,10 +806,8 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
         }
     } while((details = details->next));
 
-    if(root) {
+    if(root)
         json_write_response(root, file);
-        cJSON_Delete(root);
-    }
 
     return Status_OK;
 }
@@ -1125,10 +1123,10 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     network_info_t *network = networking_get_info();
     vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive();
 
-    strcpy(hostpath, webui_get_sys_path());
-    if(*hostpath == '\0')
+//    strcpy(hostpath, webui_get_sys_path());
+//    if(*hostpath == '\0')
         strcpy(hostpath, sdfs && flashfs == NULL ? "/www" : "/");
-    vfs_fixpath(hostpath);
+//    vfs_fixpath(hostpath);
 
     if(json) {
 

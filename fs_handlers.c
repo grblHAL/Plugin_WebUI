@@ -53,18 +53,34 @@ static void data_is_json (void)
 }
 
 // add file to the JSON response array
-static bool add_file (cJSON *files, char *path, vfs_dirent_t *file)
+static bool add_file (cJSON *files, char *path, vfs_dirent_t *file, time_t *mtime)
 {
     bool ok;
 
     cJSON *fileinfo;
 
-    if((ok = (fileinfo = cJSON_CreateObject()) != NULL))
-    {
+    if((ok = (fileinfo = cJSON_CreateObject()) != NULL)) {
+
         ok = !!cJSON_AddStringToObject(fileinfo, "name", file->name);
-#if WEBUI_ENABLE < 3
+#if WEBUI_ENABLE != 2
+        if(mtime) {
+
+            char buf[20];
+            struct tm *modified;
+
+            modified = gmtime(mtime);
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-overflow"
+#endif
+            sprintf(buf, "%04i-%02i-%02iT%02i:%02i:%02i", modified->tm_year < 1000 ? modified->tm_year + 1900 : modified->tm_year, modified->tm_mon, modified->tm_mday, modified->tm_hour, modified->tm_min, modified->tm_sec);
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+            ok &= !!cJSON_AddStringToObject(fileinfo, "time", buf);
+        }
+#else
         ok &= !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
-        ok &= !!cJSON_AddStringToObject(fileinfo, "datetime", "");
 #endif
         if(file->st_mode.directory)
             ok &= !!cJSON_AddNumberToObject(fileinfo, "size", -1.0);
@@ -75,11 +91,19 @@ static bool add_file (cJSON *files, char *path, vfs_dirent_t *file)
     return ok && cJSON_AddItemToArray(files, fileinfo);
 }
 
+static char *get_fullpath (char *path, char *filename)
+{
+    static char fullpath[255];
+
+    return strcat(strcat(strcpy(fullpath, vfs_fixpath(path)), "/"), filename);
+}
+
 static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 {
     int res = 0;
     vfs_dir_t *dir;
     vfs_dirent_t *dirent;
+    vfs_stat_t st;
 
     bool subdirs = false;
 
@@ -94,8 +118,18 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 
         subdirs |= dirent->st_mode.directory;
 
-        if(!dirent->st_mode.directory)
-            add_file(files, path, dirent);
+        if(!dirent->st_mode.directory) {
+#if WEBUI_ENABLE != 2
+            int res = vfs_stat(get_fullpath(path, dirent->name), &st);
+#if ESP_PLATFORM
+            add_file(files, path, dirent, res == 0 ? &st.st_mtim : NULL);
+#else
+            add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
+#endif
+#else
+            add_file(files, path, dirent, res == 0 ? NULL);
+#endif
+        }
     }
 
     vfs_closedir(dir);
@@ -115,7 +149,7 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
             size_t pathlen = strlen(path);
 //          if(pathlen + strlen(get_name(&fno)) > (MAX_PATHLEN - 1))
                 //break;
-            add_file(files, path, dirent);
+            add_file(files, path, dirent, NULL);
             if(depth > 1) {
                 sprintf(&path[pathlen], "/%s", dirent->name);
                 if((res = sd_scan_dir(files, path, depth - 1)) != 0)
@@ -139,8 +173,7 @@ bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
 
     if((ok = (root && (files = cJSON_AddArrayToObject(root, "files"))))) {
 
-        if(pathlen > 1 && path[pathlen - 1] == '/')
-            path[pathlen - 1] = '\0';
+        vfs_fixpath(path);
 
         sd_scan_dir(files, path, 1);
 
@@ -195,8 +228,7 @@ static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, v
 const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 {
     bool ok = false;
-    char path[100];
-    char filename[100], fullname[100];
+    char path[100], filename[100], *fullname;
     char action[20], status[sizeof(filename) + 50], quiet[4];
     uint_fast16_t pathlen;
 
@@ -209,10 +241,11 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 //        return ESP_OK;
 
     *status = *path = '\0';
-    pathlen = strlen(drive->path);
     strcpy(path, drive->path);
 
-    http_get_param_value(request, "path", path + pathlen, sizeof(path) - pathlen);
+    http_get_param_value(request, "path", filename, sizeof(filename));
+    strcat(path, *filename == '/' ? filename + 1 : filename);
+
     http_get_param_value(request, "filename", filename, sizeof(filename));
     http_get_param_value(request, "action", action, sizeof(action));
     http_get_param_value(request, "quiet", quiet, sizeof(quiet));
@@ -231,11 +264,13 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 
 //        char *fullname = ((file_server_data_t *)req->user_ctx)->scratch;
 
+        fullname = get_fullpath(path, filename);
+/*
         if(strlen(drive->path) > 1 || *drive->path != '/')
             strcat(strcat(strcpy(fullname, drive->path), "/"), filename);
         else
             strcat(strcpy(fullname, path), filename);
-
+*/
         switch(strlookup(action, "delete,createdir,deletedir,list", ',')) {
 
             case 0: // delete
@@ -262,7 +297,7 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
                 if(strlen(fullname) == 1)
                     strcpy(status, "Cannot delete root directory!");
                 else if(vfs_stat(fullname, &file) == 0) {
-                      if(vfs_rmdir(fullname))
+                    if(vfs_rmdir(fullname) == 0)
                         sprintf(status, "%s deleted", filename);
                     else
                         sprintf(status, "Error deleting %s!", filename);
