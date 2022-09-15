@@ -784,27 +784,64 @@ static bool add_setting2 (const setting_detail_t *setting, uint_fast16_t offset,
     return add_setting((cJSON *)settings, setting, -1, offset);
 }
 
+static int cmp_settings (const void *a, const void *b)
+{
+  return (*(setting_detail_t **)(a))->group - (*(setting_detail_t **)(b))->group;
+}
+
 // ESP400
 static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
-    uint_fast16_t idx;
+    uint_fast16_t idx, n_settings = 0;
     cJSON *root = cJSON_CreateObject(), *settings = NULL;
     setting_details_t *details = settings_get_details();
     const setting_detail_t *setting;
+    setting_detail_t **all_settings, **psetting;
 
     if((ok = root != NULL)) {
         ok &= !!cJSON_AddStringToObject(root, "cmd", uitoa(command->id));
         ok &= !!cJSON_AddStringToObject(root, "status", "ok");
     }
 
-    if((ok &= !!(settings = cJSON_AddArrayToObject(root, "data")))) do {
-        for(idx = 0; idx < details->n_settings; idx++) {
-            setting = &details->settings[idx];
-            if(setting->is_available == NULL || setting->is_available(setting))
-                settings_iterator(setting, add_setting2, settings);
-        }
-    } while((details = details->next));
+    if((ok &= !!(settings = cJSON_AddArrayToObject(root, "data")))) {
+
+        do {
+            n_settings += details->n_settings;
+        } while((details = details->next));
+
+        details = settings_get_details();
+
+        if((all_settings = psetting = calloc(n_settings, sizeof(setting_detail_t *)))) {
+
+            n_settings = 0;
+
+            do {
+                for(idx = 0; idx < details->n_settings; idx++) {
+                    setting = &details->settings[idx];
+                    if(setting->is_available == NULL || setting->is_available(setting)) {
+                        *psetting++ = (setting_detail_t *)setting;
+                        n_settings++;
+                    }
+                }
+            } while((details = details->next));
+
+            qsort(all_settings, n_settings, sizeof(setting_detail_t *), cmp_settings);
+
+            for(idx = 0; idx < n_settings; idx++) {
+                settings_iterator(all_settings[idx], add_setting2, settings);
+            }
+
+            free(all_settings);
+
+        } else do {
+            for(idx = 0; idx < details->n_settings; idx++) {
+                setting = &details->settings[idx];
+                if(setting->is_available == NULL || setting->is_available(setting))
+                    settings_iterator(setting, add_setting2, settings);
+            }
+        } while((details = details->next));
+    }
 
     if(root)
         json_write_response(root, file);
@@ -901,6 +938,9 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
 
         if((ok = !!(root = json_create_response_hdr(command_id, true, true, &data, NULL)))) {
 
+            if(hal.get_free_mem)
+                ok &= add_system_value(data, "free mem", btoa(hal.get_free_mem()));
+
 //            ok &= add_system_value(data, "chip id", "0");
             ok &= add_system_value(data, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
 
@@ -908,7 +948,7 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
 
                 ok &= add_system_value(data, "FS type", "SD");
 
-                strcpy(buf, btoa(mount->size)); // assuming 512 byte sector size
+                strcpy(buf, btoa(mount->size));
                 strcat(buf, "/");
                 strcat(buf, btoa(mount->used));
                 ok &= add_system_value(data, "FS usage", buf);
@@ -1447,37 +1487,33 @@ static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fa
 static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
+    cJSON *root, *data, *ap;
+
+    wifi_ap_scan();
 
     ap_list_t *ap_list = wifi_get_aplist();
 
-    if(ap_list && ap_list->ap_records) {
+    if((ok = !!(root = json_create_response_hdr(command->id, true, true, &data, NULL)))) {
 
-        cJSON *root;
+        if(ap_list && ap_list->ap_records) {
 
-        if((root = cJSON_CreateObject())) {
-
-            cJSON *ap, *aps;
-
-            if((aps = cJSON_AddArrayToObject(root, "AP_LIST"))) {
-
-                for(int i = 0; i < ap_list->ap_num; i++) {
-                    if((ok = !!(ap = cJSON_CreateObject())))
-                    {
-                        ok = !!cJSON_AddStringToObject(ap, "SSID", (char *)ap_list->ap_records[i].ssid);
-                        ok &= !!cJSON_AddNumberToObject(ap, "SIGNAL", (double)ap_list->ap_records[i].rssi);
-                        ok &= !!cJSON_AddStringToObject(ap, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
-                        if(ok)
-                            cJSON_AddItemToArray(aps, ap);
-                    }
+            for(int i = 0; i < ap_list->ap_num; i++) {
+                if((ok = !!(ap = cJSON_CreateObject())))
+                {
+                    ok = !!cJSON_AddStringToObject(ap, "SSID", (char *)ap_list->ap_records[i].ssid);
+                    ok &= !!cJSON_AddNumberToObject(ap, "SIGNAL", (double)ap_list->ap_records[i].rssi);
+                    ok &= !!cJSON_AddStringToObject(ap, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
+                    if(ok)
+                        cJSON_AddItemToArray(data, ap);
                 }
             }
-
-            if(ok)
-                json_write_response(root, file);
-            else
-                cJSON_Delete(root);
         }
     }
+
+    if(ok)
+        json_write_response(root, file);
+    else if(root)
+        cJSON_Delete(root);
 
     if(ap_list)
         wifi_release_aplist();

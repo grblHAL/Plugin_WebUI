@@ -84,6 +84,7 @@ static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
 static driver_setup_ptr driver_setup;
 static on_report_options_ptr on_report_options;
 static on_execute_realtime_ptr on_execute_realtime;
+static websocket_t *wsocket;
 static websocket_on_protocol_select_ptr on_protocol_select;
 
 char *webui_get_sys_path (void)
@@ -105,12 +106,25 @@ static webui_auth_level_t get_auth_level (http_request_t *req)
 
 #endif
 
-static char *websocket_protocol_select (char *protocols, bool *is_binary)
+void websocket_on_frame_received (websocket_t *websocket, void *data, size_t size)
 {
-    if((is_v3 = strlookup(protocols, "webui-v3", ',') >= 0))
-        *is_binary = true;
+//    bool ok = size > 5 && !strncmp((char *)data, "PING:", 5);
 
-    return is_v3 ? "webui-v3" : (on_protocol_select ? on_protocol_select(protocols, is_binary) : NULL);
+//    if((ok = size > 5 && !strncmp((char *)data, "PING:", 5)))
+//        websocket_send_frame(websocket, "PING:6000,0", 11, true);
+}
+
+static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
+{
+    if((is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
+        *is_binary = true;
+         wsocket = websocket;
+         websocket_set_stream_flags(websocket, (io_stream_state_t){ .connected = true, .webui_connected = true });
+         websocket_register_frame_handler(websocket, websocket_on_frame_received, false); // claim text frames
+    } else
+        wsocket = NULL;
+
+    return is_v3 ? "webui-v3" : (on_protocol_select ? on_protocol_select(websocket, protocols, is_binary) : NULL);
 }
 
 //static ip_addr_t ip;
@@ -130,7 +144,11 @@ static const char *command (http_request_t *request)
     if(busy)
         return NULL;
 
+#if WEBUI_ENABLE < 100 // for now... WebUI should connect the websocket before sending commands?
     hal.stream.state.webui_connected = busy = true;
+#else
+    busy = true;
+#endif
 
     if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL && http_get_param_value(request, "cmd", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
@@ -336,28 +354,26 @@ static const char *get_handler (http_request_t *request)
         if (!strcmp(http_get_uri(request), "/ap_login.html"))
             return http_get_uri(request);
 
+        char *ip;
         bool internal = false;
-        ip_addr_t ip = http_get_remote_ip(request);
-        char aip[INET6_ADDRSTRLEN];
-
-        inet_ntop(AF_INET, &ip, aip, INET6_ADDRSTRLEN);
-
+        ip4_addr_t ap_ip;
+        ip_addr_t host_ip = http_get_remote_ip(request);
         ap_list_t *ap_list = wifi_get_aplist();
 
         if(ap_list) { // Request is from local STA?
-            internal = ap_list->ap_selected && memcmp(&ap_list->ip_addr, &ip, sizeof(ip4_addr_t)) == 0;
+            internal = ap_list->ap_selected && memcmp(&ap_list->ip_addr, &host_ip, sizeof(ip4_addr_t)) == 0;
             wifi_release_aplist();
         }
 
-        wifi_settings_t *settings = get_wifi_settings();
+        // if not from local AP redirect
+        if(!internal && (ip = setting_get_value(setting_get_details(Setting_IpAddress2, NULL), 0)) && inet_pton(AF_INET, ip, &ap_ip) == 1) {
+            if(memcmp(&host_ip, &ap_ip, sizeof(ip4_addr_t))) {
 
-        // From local AP?
-        if(!internal && memcmp(&settings->ap.network.ip, &ip, sizeof(ip4_addr_t))) {
+                char loc[75];
+                sprintf(loc, "http://%s/ap_login.html", network->status.ip);
 
-            char loc[75];
-            sprintf(loc, "http://%s/ap_login.html", network->status.ip);
-
-            return redirect_html_get_handler(request, loc);
+                return redirect_html_get_handler(request, loc);
+            }
         }
     }
 
@@ -708,7 +724,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.07]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.08]" ASCII_EOL);
 }
 
 void webui_init (void)

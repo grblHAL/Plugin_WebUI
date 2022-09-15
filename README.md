@@ -9,14 +9,16 @@ It requires lwIP version 2.1.0 or later, however 2.0.x can be patched to make it
 
 The following drivers can be used with this plugin:
 
-| Driver                                                            |lwIP version|patch required| FlashFS  |
-|-------------------------------------------------------------------|------------|--------------|----------|
-| [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          | littlefs |
-| [RP2040 \(Pi Pico W\)](https://github.com/grblHAL/RP2040)         | 2.1.1      | no           | littlefs |
-| [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           | littlefs |
-| [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           | no       |
-| [STM32H7xx](https://github.com/dresco/STM32H7xx)                  | ?          | no           | TBA      |
-| [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          | no       |
+| Driver                                                            |lwIP version|patch required| FlashFS              |
+|-------------------------------------------------------------------|------------|--------------|----------------------|
+| [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          | littlefs             |
+| [RP2040 \(Pi Pico W\)](https://github.com/grblHAL/RP2040)         | 2.1.1      | no           | littlefs             |
+| [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           | littlefs             |
+| [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           | no                   |
+| [STM32H7xx](https://github.com/dresco/STM32H7xx)                  | ?          | no           | TBA                  |
+| [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          | littlefs<sup>1</sup> |
+
+<sup>1</sup> FlashFS is erased when reflashing firmware!
 
 #### Installation:
 
@@ -57,4 +59,4 @@ See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/tree/3bc2b5690574
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2022-09-03
+2022-09-13

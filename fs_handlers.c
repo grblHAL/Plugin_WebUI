@@ -63,22 +63,8 @@ static bool add_file (cJSON *files, char *path, vfs_dirent_t *file, time_t *mtim
 
         ok = !!cJSON_AddStringToObject(fileinfo, "name", file->name);
 #if WEBUI_ENABLE != 2
-        if(mtime) {
-
-            char buf[20];
-            struct tm *modified;
-
-            modified = gmtime(mtime);
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-overflow"
-#endif
-            sprintf(buf, "%04i-%02i-%02iT%02i:%02i:%02i", modified->tm_year < 1000 ? modified->tm_year + 1900 : modified->tm_year, modified->tm_mon, modified->tm_mday, modified->tm_hour, modified->tm_min, modified->tm_sec);
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-            ok &= !!cJSON_AddStringToObject(fileinfo, "time", buf);
-        }
+        if(mtime)
+            ok &= !!cJSON_AddStringToObject(fileinfo, "time", strtoisodt(gmtime(mtime)));
 #else
         ok &= !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
 #endif
@@ -168,13 +154,11 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
 {
     bool ok;
-    uint_fast16_t pathlen = strlen(path);
     cJSON *files = NULL;
 
     if((ok = (root && (files = cJSON_AddArrayToObject(root, "files"))))) {
 
         vfs_fixpath(path);
-
         sd_scan_dir(files, path, 1);
 
         cJSON_AddStringToObject(root, "path", path);
