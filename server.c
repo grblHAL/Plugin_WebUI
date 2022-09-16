@@ -56,11 +56,10 @@
 #include "flashfs.h"
 
 #include "args.h"
+#include "login.h"
 #include "commands_v2.h"
 #include "commands_v3.h"
 #include "fs_handlers.h"
-
-#include "../grbl/protocol.h"
 
 #if ESP_PLATFORM
 #include "../esp_webui/fs_spiffs.h"
@@ -68,23 +67,23 @@
 #elif WEBUI_INFLASH
 #include "fs_embedded.h"
 #endif
-#if WEBUI_AUTH_ENABLE
-#include "login.h"
-#endif
-
-#ifndef WEBUI_AUTO_REPORT_INTERVAL
-#define WEBUI_AUTO_REPORT_INTERVAL 0 // ms
-#endif
 
 #include "grbl/vfs.h"
 
+typedef struct {
+    websocket_t *websocket;
+    uint32_t timeout;
+    uint32_t activity;
+} webui_client_t;
+
 static bool file_is_json = false, is_v3 = false;
 static char sys_path[32] = ""; // Directory where index.html.gz was found
-static uint32_t auto_report_interval = WEBUI_AUTO_REPORT_INTERVAL;
+static webui_client_t client;
 static driver_setup_ptr driver_setup;
 static on_report_options_ptr on_report_options;
-static on_execute_realtime_ptr on_execute_realtime;
-static websocket_t *wsocket;
+
+static websocket_on_client_connect_ptr on_client_connect;
+static websocket_on_client_disconnect_ptr on_client_disconnect;
 static websocket_on_protocol_select_ptr on_protocol_select;
 
 char *webui_get_sys_path (void)
@@ -106,23 +105,64 @@ static webui_auth_level_t get_auth_level (http_request_t *req)
 
 #endif
 
+void websocket_client_connect (websocket_t *websocket)
+{
+    char buf[24];
+
+    if(client.websocket == websocket) {
+#if WEBUI_AUTH_ENABLE
+        client.activity = hal.get_elapsed_ticks();
+        client.timeout = login_get_timeout_period();
+#endif
+        strcat(strcpy(buf, "currentID:"), uitoa((uint32_t)websocket));
+        websocket_send_frame(websocket, buf, strlen(buf), false);
+
+        if(!websocket_claim_stream(websocket)) {
+            strcat(strcpy(buf, "activeID:"), uitoa((uint32_t)websocket));
+            websocket_broadcast_frame(buf, strlen(buf), false); // TODO: only to webui clients?
+        }
+
+    } else if(on_client_connect)
+        on_client_connect(websocket);
+}
+
+void websocket_client_disconnect (websocket_t *websocket)
+{
+    if(client.websocket && client.websocket != websocket)
+        websocket_claim_stream(client.websocket);
+
+    if(on_client_disconnect)
+        on_client_disconnect(websocket);
+}
+
 void websocket_on_frame_received (websocket_t *websocket, void *data, size_t size)
 {
-//    bool ok = size > 5 && !strncmp((char *)data, "PING:", 5);
+#if WEBUI_AUTH_ENABLE
+    if(size > 5 && !strncmp((char *)data, "PING:", 5)) {
 
-//    if((ok = size > 5 && !strncmp((char *)data, "PING:", 5)))
-//        websocket_send_frame(websocket, "PING:6000,0", 11, true);
+        char buf[20];
+        uint32_t td = hal.get_elapsed_ticks() - client.activity;
+
+
+        if((client.timeout = login_get_timeout_period()))
+            strcat(strcat(strcpy(buf, "PING:"), uitoa(td > client.timeout ? 0 : client.timeout - td)), td > client.timeout ? ":1" : ":0");
+        else
+            strcpy(buf, "PING:360000:0");
+
+        websocket_send_frame(websocket, buf, strlen(buf), false);
+    }
+#endif
 }
 
 static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
 {
     if((is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
         *is_binary = true;
-         wsocket = websocket;
+         client.websocket = websocket;
          websocket_set_stream_flags(websocket, (io_stream_state_t){ .connected = true, .webui_connected = true });
          websocket_register_frame_handler(websocket, websocket_on_frame_received, false); // claim text frames
     } else
-        wsocket = NULL;
+        client.websocket = NULL;
 
     return is_v3 ? "webui-v3" : (on_protocol_select ? on_protocol_select(websocket, protocols, is_binary) : NULL);
 }
@@ -136,7 +176,7 @@ static const char *command (http_request_t *request)
     static bool busy;
 
     bool ok;
-    char data[100], *cmd;
+    char data[100], *cmd, *ping = NULL;
     vfs_file_t *file;
 
     file_is_json = false;
@@ -150,13 +190,25 @@ static const char *command (http_request_t *request)
     busy = true;
 #endif
 
-    if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL && http_get_param_value(request, "cmd", data, sizeof(data)) == NULL)
+    if(http_get_param_value(request, "cmd", data, sizeof(data)) == NULL &&
+        (ping = http_get_param_value(request, "PING", data, sizeof(data))) == NULL &&
+          http_get_param_value(request, "commandText", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
 
 //    ip = http_get_remote_ip(request);
 //    port = http_get_remote_port(request);
 
     http_set_response_header(request, "Cache-Control", "no-cache");
+
+    if(ping) {
+
+        if(!strcmp(data, "Yes"))
+            client.activity = hal.get_elapsed_ticks();
+
+        busy = false;
+
+        return NULL;
+    }
 
     if((cmd = strstr(data, "[ESP"))) {
 
@@ -259,6 +311,9 @@ static const char *command (http_request_t *request)
                     webui_trim_arg(&argc, argv, "time=");
                 }
             }
+
+            if(cmdv != 701 || sdcard_busy())
+                client.activity = hal.get_elapsed_ticks();
 
 #if WEBUI_ENABLE == 1
 
@@ -655,19 +710,6 @@ static const char *config_handler_get (http_request_t *request)
     return is_json ? "/ram/qry.json" : "/ram/qry.txt";
 }
 
-static void webui_auto_report (sys_state_t state)
-{
-    static uint32_t ms = 0;
-
-    if(auto_report_interval > 0 && (hal.get_elapsed_ticks() - ms) >= auto_report_interval) {
-        ms = hal.get_elapsed_ticks();
-        if(hal.stream.state.webui_connected)
-            protocol_enqueue_realtime_command(CMD_STATUS_REPORT);
-    }
-
-    on_execute_realtime(state);
-}
-
 bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mode)
 {
     if(*path == '\0' || (*file = vfs_open(strcat(path, uri + 1), mode)) == NULL) {
@@ -724,14 +766,12 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.08]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.09]" ASCII_EOL);
 }
 
 void webui_init (void)
 {
-#if WEBUI_AUTH_ENABLE
-    login_init();
-#endif
+    login_init(); // handles WebUI settings so always call!
 
     driver_setup = hal.driver_setup;
     hal.driver_setup = webui_setup;
@@ -739,11 +779,14 @@ void webui_init (void)
     on_report_options = grbl.on_report_options;
     grbl.on_report_options = webui_options;
 
-    on_execute_realtime = grbl.on_execute_realtime;
-    grbl.on_execute_realtime = webui_auto_report;
-
     on_protocol_select = websocket.on_protocol_select;
     websocket.on_protocol_select = websocket_protocol_select;
+
+    on_client_connect = websocket.on_client_connect;
+    websocket.on_client_connect = websocket_client_connect;
+
+    on_client_disconnect = websocket.on_client_disconnect;
+    websocket.on_client_disconnect = websocket_client_disconnect;
 
     httpd.on_open_file_failed = file_redirect;
 

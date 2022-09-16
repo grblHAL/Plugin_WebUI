@@ -63,8 +63,11 @@ typedef struct {
 } login_form_data_t;
 
 void login_init (void);
+#if WEBUI_AUTH_ENABLE
 webui_auth_level_t get_auth_level (http_request_t *request);
 const char *login_handler_get (http_request_t *request);
 const char *login_handler_post (http_request_t *request);
+uint32_t login_get_timeout_period (void);
+#endif
 
 #endif

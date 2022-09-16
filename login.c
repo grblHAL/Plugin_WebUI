@@ -30,7 +30,7 @@
 #include "driver.h"
 #endif
 
-#if WEBUI_ENABLE && WEBUI_AUTH_ENABLE
+#if WEBUI_ENABLE
 
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +38,7 @@
 
 #include "grbl/vfs.h"
 #include "grbl/nvs_buffer.h"
+#include "grbl/protocol.h"
 
 #include "../networking/cJSON.h"
 #include "../networking/multipartparser.h"
@@ -49,7 +50,99 @@
 typedef struct {
     password_t admin_password;
     password_t user_password;
+    uint16_t session_timeout;
+    uint16_t report_interval;
 } webui_settings_t;
+
+static webui_settings_t webui;
+static nvs_address_t nvs_address;
+static on_execute_realtime_ptr on_execute_realtime;
+
+static void webui_settings_restore (void);
+static void webui_settings_load (void);
+
+static const setting_detail_t webui_settings[] = {
+#if WEBUI_AUTH_ENABLE
+    { Setting_AdminPassword, Group_General, "Admin Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.admin_password, NULL, NULL, false },
+    { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.user_password, NULL, NULL, false },
+#endif
+    { Setting_WebUiTimeout, Group_General, "WebUI timeout", "minutes", Format_Int16, "##0", NULL, "999", Setting_NonCore, &webui.session_timeout, NULL, NULL, false },
+    { Setting_WebUiAutoReportInterval, Group_General, "WebUI auto report interval", "milliseconds", Format_Int16, "###0", NULL, "9999", Setting_NonCore, &webui.report_interval, NULL, NULL, true },
+};
+
+#ifndef NO_SETTINGS_DESCRIPTIONS
+
+static const setting_descr_t webui_settings_descr[] = {
+#if WEBUI_AUTH_ENABLE
+    { Setting_AdminPassword,           "WebUI administrator password." },
+    { Setting_UserPassword,            "WebUI user password." },
+#endif
+    { Setting_WebUiTimeout,            "WebUI inactivity timeout, set to 0 to disable." },
+    { Setting_WebUiAutoReportInterval, "WebUI realtime report interval, set to 0 to disable." },
+};
+
+#endif
+
+static void webui_settings_save (void)
+{
+    hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
+}
+
+static setting_details_t details = {
+//    .groups = webui_groups,
+//    .n_groups = sizeof(webui_groups) / sizeof(setting_group_detail_t),
+    .settings = webui_settings,
+    .n_settings = sizeof(webui_settings) / sizeof(setting_detail_t),
+#ifndef NO_SETTINGS_DESCRIPTIONS
+    .descriptions = webui_settings_descr,
+    .n_descriptions = sizeof(webui_settings_descr) / sizeof(setting_descr_t),
+#endif
+    .save = webui_settings_save,
+    .load = webui_settings_load,
+    .restore = webui_settings_restore
+};
+
+static void webui_settings_restore (void)
+{
+    strcpy(webui.admin_password, "admin");
+    strcpy(webui.user_password, "user");
+    webui.session_timeout = 30; // minutes
+    webui.report_interval = 0; // milliseconds
+
+    hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
+}
+
+static void webui_auto_report (sys_state_t state)
+{
+    static uint32_t ms = 0;
+
+    uint32_t t = hal.get_elapsed_ticks();
+
+    if(t - ms >= webui.report_interval) {
+        ms = t;
+        if(hal.stream.state.webui_connected)
+            protocol_enqueue_realtime_command(CMD_STATUS_REPORT);
+    }
+
+    on_execute_realtime(state);
+}
+
+static void start_auto_report (sys_state_t state)
+{
+    on_execute_realtime = grbl.on_execute_realtime;
+    grbl.on_execute_realtime = webui_auto_report;
+}
+
+static void webui_settings_load (void)
+{
+    if(hal.nvs.memcpy_from_nvs((uint8_t *)&webui, nvs_address, sizeof(webui_settings_t), true) != NVS_TransferResult_OK)
+        webui_settings_restore();
+
+    if(webui.report_interval)
+        protocol_enqueue_rt_command(start_auto_report);
+}
+
+#if WEBUI_AUTH_ENABLE
 
 typedef struct webui_auth {
     webui_auth_level_t level;
@@ -61,10 +154,6 @@ typedef struct webui_auth {
 } webui_auth_t;
 
 static webui_auth_t *sessions = NULL;
-static webui_settings_t webui;
-static nvs_address_t nvs_address;
-static void webui_settings_restore (void);
-static void webui_settings_load (void);
 
 static struct multipartparser parser;
 static struct multipartparser_callbacks *login_callbacks = NULL;
@@ -295,43 +384,6 @@ static const char *login (login_form_data_t *login)
     }
 
     return ok ? "/stream/data.json" : NULL;
-}
-
-static const setting_detail_t webui_settings[] = {
-    { Setting_AdminPassword, Group_General, "Admin Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.admin_password, NULL, NULL },
-    { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.user_password, NULL, NULL },
-};
-
-static void webui_settings_save (void)
-{
-    hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
-}
-
-static setting_details_t details = {
-//    .groups = webui_groups,
-//    .n_groups = sizeof(webui_groups) / sizeof(setting_group_detail_t),
-    .settings = webui_settings,
-    .n_settings = sizeof(webui_settings) / sizeof(setting_detail_t),
-#ifndef NO_SETTINGS_DESCRIPTIONS
-//    .descriptions = ethernet_settings_descr,
-//    .n_descriptions = sizeof(ethernet_settings_descr) / sizeof(setting_descr_t),
-#endif
-    .save = webui_settings_save,
-    .load = webui_settings_load,
-    .restore = webui_settings_restore
-};
-
-static void webui_settings_restore (void)
-{
-    memset(&webui, 0, sizeof(webui_settings_t));
-
-    hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
-}
-
-static void webui_settings_load (void)
-{
-    if(hal.nvs.memcpy_from_nvs((uint8_t *)&webui, nvs_address, sizeof(webui_settings_t), true) != NVS_TransferResult_OK)
-        webui_settings_restore();
 }
 
 static void cleanup (void *form)
@@ -598,6 +650,12 @@ const char *login_handler_post (http_request_t *request)
     return NULL;
 }
 
+// milliseconds
+uint32_t login_get_timeout_period (void)
+{
+    return webui.session_timeout * 60 * 1000;
+}
+
 const char *login_handler_get (http_request_t *request)
 {
     char tmp[30];
@@ -621,10 +679,12 @@ const char *login_handler_get (http_request_t *request)
     return login(&login_data);
 }
 
+#endif // WEBUI_AUTH_ENABLE
+
 void login_init (void)
 {
     if((nvs_address = nvs_alloc(sizeof(webui_settings_t))))
         settings_register(&details);
 }
 
-#endif // WEBUI_ENABLE && WEBUI_AUTH_ENABLE
+#endif // WEBUI_ENABLE
