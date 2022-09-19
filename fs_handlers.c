@@ -66,6 +66,7 @@ static bool add_file (cJSON *files, char *path, vfs_dirent_t *file, time_t *mtim
         if(mtime)
             ok &= !!cJSON_AddStringToObject(fileinfo, "time", strtoisodt(gmtime(mtime)));
 #else
+        ok &= !!cJSON_AddStringToObject(fileinfo, "datetime", "");
         ok &= !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
 #endif
         if(file->st_mode.directory)
@@ -87,11 +88,12 @@ static char *get_fullpath (char *path, char *filename)
 static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 {
     int res = 0;
+    bool subdirs = false;
     vfs_dir_t *dir;
     vfs_dirent_t *dirent;
+#if WEBUI_ENABLE != 2
     vfs_stat_t st;
-
-    bool subdirs = false;
+#endif
 
     if((dir = vfs_opendir(path)) == NULL)
         return vfs_errno;
@@ -107,13 +109,13 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
         if(!dirent->st_mode.directory) {
 #if WEBUI_ENABLE != 2
             int res = vfs_stat(get_fullpath(path, dirent->name), &st);
-#if ESP_PLATFORM
+  #if ESP_PLATFORM
             add_file(files, path, dirent, res == 0 ? &st.st_mtim : NULL);
-#else
+  #else
             add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
-#endif
+  #endif
 #else
-            add_file(files, path, dirent, res == 0 ? NULL);
+            add_file(files, path, dirent, NULL);
 #endif
         }
     }

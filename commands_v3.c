@@ -644,7 +644,6 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
 }
 
 // ESP200
-
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char *msg;
@@ -722,107 +721,12 @@ static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fa
 // ESP400
 
 // Add setting to the JSON response array
-static bool add_bitmap_setting (cJSON *settings, const setting_detail_t *setting)
-{
-    bool ok;
-    cJSON *settingobj;
-
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)))) {
-
-        char opt[50], labeltxt[50], name[30], *label;
-        const setting_group_detail_t *group = setting_get_group_details(setting->group);
-
-        uint32_t i, j = strnumentries(setting->format, ',');
-        for(i = 0; i < j; i++) {
-
-            if(strcmp((label = strgetentry(opt, setting->format, i, ',')), "N/A")) {
-
-                strcpy(labeltxt, label);
-                if((label = strchr(strcpy(name, setting->name), '/')))
-                    *label = '\\';
-
-                ok = !!(settingobj = cJSON_CreateObject());
-
-                ok  = !!cJSON_AddStringToObject(settingobj, "F", strcat(strcat(strcpy(opt, name), "/"), group->name));
-                ok &= !!cJSON_AddStringToObject(settingobj, "P", strcat(strcat(strcpy(opt, uitoa(setting->id)), "#"), uitoa(i)));
-                ok &= !!cJSON_AddStringToObject(settingobj, "T", "B");
-                ok &= !!cJSON_AddStringToObject(settingobj, "V", setting_get_int_value(setting, 0) & (1 << i) ? "1" : "0");
-                ok &= !!cJSON_AddStringToObject(settingobj, "H", labeltxt);
-                if(setting->reboot_required)
-                    ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
-
-                cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
-
-                option = cJSON_CreateObject();
-                cJSON_AddStringToObject(option, "On", "1");
-                cJSON_AddItemToArray(options, option);
-                option = cJSON_CreateObject();
-                cJSON_AddStringToObject(option, "Off", "0");
-                cJSON_AddItemToArray(options, option);
-
-                if(ok)
-                    cJSON_AddItemToArray(settings, settingobj);
-            }
-        }
-    }
-
-    return ok;
-}
-
-// Add setting to the JSON response array
-static bool add_axismask_setting (cJSON *settings, const setting_detail_t *setting)
-{
-    bool ok;
-    cJSON *settingobj;
-
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)))) {
-
-        char opt[50];
-        const setting_group_detail_t *group = setting_get_group_details(setting->group);
-
-        uint32_t i;
-        for(i = 0; i < N_AXIS; i++) {
-
-            ok = !!(settingobj = cJSON_CreateObject());
-
-            ok  = !!cJSON_AddStringToObject(settingobj, "F", strcat(strcat(strcpy(opt, setting->name), "/"), group->name));
-            ok &= !!cJSON_AddStringToObject(settingobj, "P", strcat(strcat(strcpy(opt, uitoa(setting->id)), "#"), uitoa(i)));
-            ok &= !!cJSON_AddStringToObject(settingobj, "T", "B");
-            ok &= !!cJSON_AddStringToObject(settingobj, "V", setting_get_int_value(setting, 0) & (1 << i) ? "1" : "0");
-            ok &= !!cJSON_AddStringToObject(settingobj, "H", axis_letter[i]);
-            if(setting->reboot_required)
-                ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
-
-            cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
-
-            option = cJSON_CreateObject();
-            cJSON_AddStringToObject(option, "On", "1");
-            cJSON_AddItemToArray(options, option);
-            option = cJSON_CreateObject();
-            cJSON_AddStringToObject(option, "Off", "0");
-            cJSON_AddItemToArray(options, option);
-
-            if(ok)
-                cJSON_AddItemToArray(settings, settingobj);
-        }
-    }
-
-    return ok;
-}
-
-// Add setting to the JSON response array
 static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
 {
     static const char *tmap[] = { "B", "M", "X", "B", "M", "I", "F", "S", "S", "A", "I", "I" };
 
     bool ok;
     cJSON *settingobj;
-
-    if(setting->datatype == Format_Bitfield)
-        return add_bitmap_setting(settings, setting);
-
-    if(setting->datatype == Format_AxisMask)
-        return add_axismask_setting(settings, setting);
 
     if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject()))) {
 
@@ -848,6 +752,8 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
         ok &= !!cJSON_AddStringToObject(settingobj, "T", tmap[setting->datatype]);
         ok &= !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
         ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name + name_ofs : strgetentry(opt, setting->format, bit, ','));
+        if(setting->unit)
+            ok &= !!cJSON_AddStringToObject(settingobj, "U", setting->unit);
         if(setting->reboot_required)
             ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
 
@@ -882,14 +788,60 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
                 }
                 break;
 
+            case Format_AxisMask:
+                {
+                    uint_fast16_t i;
+                    cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
+                    for(i = 0; i < N_AXIS; i++) {
+                        option = cJSON_CreateObject();
+                        cJSON_AddStringToObject(option, axis_letter[i], uitoa(i));
+                        cJSON_AddItemToArray(options, option);
+                    }
+                }
+                break;
+
             case Format_IPv4:
                 break;
 
             default:
-                if(setting->min_value && !setting_is_list(setting))
-                    ok &= !!cJSON_AddStringToObject(settingobj, "M", setting->min_value);
-                if(setting->max_value)
-                    ok &= !!cJSON_AddStringToObject(settingobj, "S", setting->max_value);
+                {
+                    char whole[30] = "", fraction[10] = "";
+                    const char *min = setting->min_value, *max = setting->max_value;
+
+                    if(setting->format && (setting->datatype == Format_Decimal || setting_is_integer(setting))) {
+
+                        char c, *s1 = (char *)setting->format, *s2 = whole;
+
+                        while((c = *s1++)) {
+                            if(c == '.')
+                                s2 = fraction;
+                            else {
+                                *s2++ = '9';
+                                *s2 = '\0';
+                            }
+                        }
+
+                        if(*fraction != '\0')
+                            strcat(strcat(strcpy(opt, whole), "."), fraction);
+                        else
+                            strcpy(opt, whole);
+
+                        if(min == NULL)
+                            min = *setting->format == '-' ? strcat(strcpy(whole, "-"), opt) : "0";
+
+                        if(max == NULL)
+                            max = opt;
+
+                        if(setting->datatype == Format_Decimal)
+                            ok &= !!cJSON_AddStringToObject(settingobj, "E", uitoa(strlen(fraction)));
+                    }
+
+                    if(min && !setting_is_list(setting))
+                        ok &= !!cJSON_AddStringToObject(settingobj, "M", min);
+
+                    if(max)
+                        ok &= !!cJSON_AddStringToObject(settingobj, "S", max);
+                }
                 break;
 
         }
@@ -952,9 +904,8 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 
             qsort(all_settings, n_settings, sizeof(setting_detail_t *), cmp_settings);
 
-            for(idx = 0; idx < n_settings; idx++) {
+            for(idx = 0; idx < n_settings; idx++)
                 settings_iterator(all_settings[idx], add_setting2, settings);
-            }
 
             free(all_settings);
 
@@ -1545,14 +1496,20 @@ static status_code_t global_fs_action (const struct webui_cmd_binding *command, 
 // ESP800
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
-    char buf[200], hostpath[16];
+    uint_fast16_t idx;
+    char buf[200], hostpath[16], axisletters[10];
     network_info_t *network = networking_get_info();
     vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive();
 
 //    strcpy(hostpath, webui_get_sys_path());
 //    if(*hostpath == '\0')
-        strcpy(hostpath, sdfs && flashfs == NULL ? "/www" : "/");
+    strcpy(hostpath, sdfs && flashfs == NULL ? "/www" : "/");
 //    vfs_fixpath(hostpath);
+
+    for(idx = 0; idx < N_AXIS; idx++)
+        axisletters[idx] = *axis_letter[idx];
+
+    axisletters[idx] = '\0';
 
     if(json) {
 
@@ -1588,11 +1545,14 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
             ok &= !!cJSON_AddStringToObject(data, "HostPath", hostpath);
             ok &= !!cJSON_AddStringToObject(data, "WebUpdate", /*flashfs || sdfs ? "Enabled" :*/ "Disabled");
             ok &= !!cJSON_AddStringToObject(data, "FileSystem", flashfs ? "flash" : "none");
+
             if(hal.rtc.get_datetime) {
                 struct tm time;
                 ok &= !!cJSON_AddStringToObject(data, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
             } else
                 ok &= !!cJSON_AddStringToObject(data, "Time", "none");
+
+            ok &= !!cJSON_AddStringToObject(data, "Axisletters", axisletters);
 
             json_write_response(root, file);
         }
@@ -1633,6 +1593,8 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
                 vfs_puts("Time:Not set" WEBUI_EOL, file);
         } else
             vfs_puts("Time:none" WEBUI_EOL, file);
+
+        vfs_puts(strappend(buf, 3, "Axisletters:", axisletters, WEBUI_EOL), file);
     }
 
     return Status_OK;

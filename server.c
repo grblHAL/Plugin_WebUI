@@ -167,10 +167,6 @@ static char *websocket_protocol_select (websocket_t *websocket, char *protocols,
     return is_v3 ? "webui-v3" : (on_protocol_select ? on_protocol_select(websocket, protocols, is_binary) : NULL);
 }
 
-//static ip_addr_t ip;
-//static uint16_t port;
-
-//static const char *command (int iIndex, int iNumParams, char *pcParam[], char *pcValue[])
 static const char *command (http_request_t *request)
 {
     static bool busy;
@@ -190,13 +186,18 @@ static const char *command (http_request_t *request)
     busy = true;
 #endif
 
+#if WEBUI_ENABLE == 2
+    if(http_get_param_value(request, "commandText", data, sizeof(data)) == NULL)
+        http_get_param_value(request, "plain", data, sizeof(data));
+#elif WEBUI_ENABLE == 3
+    if(http_get_param_value(request, "cmd", data, sizeof(data)) == NULL)
+        ping = http_get_param_value(request, "PING", data, sizeof(data));
+#else
     if(http_get_param_value(request, "cmd", data, sizeof(data)) == NULL &&
         (ping = http_get_param_value(request, "PING", data, sizeof(data))) == NULL &&
           http_get_param_value(request, "commandText", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
-
-//    ip = http_get_remote_ip(request);
-//    port = http_get_remote_port(request);
+#endif
 
     http_set_response_header(request, "Cache-Control", "no-cache");
 
@@ -689,6 +690,8 @@ static const char *login_handler_get (http_request_t *request)
 
 #endif
 
+#if WEBUI_ENABLE != 2
+
 static const char *config_handler_get (http_request_t *request)
 {
     char data[10];
@@ -709,6 +712,8 @@ static const char *config_handler_get (http_request_t *request)
 
     return is_json ? "/ram/qry.json" : "/ram/qry.txt";
 }
+
+#endif
 
 bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mode)
 {
@@ -766,7 +771,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.09]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.10]" ASCII_EOL);
 }
 
 void webui_init (void)
