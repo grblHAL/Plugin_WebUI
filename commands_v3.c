@@ -1357,7 +1357,7 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
 
         if(action) {
 
-            switch(strlookup(action, "pause,resume,abort", ',')) {
+            switch(strlookup(action, "PAUSE,RESUME,ABORT", ',')) {
 
                 case 0:
                     if(job)
