@@ -743,7 +743,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
 
         ok  = !!cJSON_AddStringToObject(settingobj, "F", opt);
 
-        strcpy(opt, uitoa(setting->id));
+        strcpy(opt, uitoa(setting->id + offset));
         if(bit >= 0) {
             strcat(opt, "#");
             strcat(opt, uitoa(bit));
@@ -936,32 +936,31 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
 
         char *bitp;
         const setting_detail_t *setting;
+        setting_id_t id = (setting_id_t)atoi(setting_id);
+
+        ok = !!(setting = setting_get_details(id, NULL));
 
         // "hack" for bitfield settings
-        if((bitp = strchr(setting_id, '#'))) {
+        if(ok && (bitp = strchr(setting_id, '#'))) {
 
             *bitp++ = '\0';
             uint32_t pmask = 1 << atoi(bitp), tmask;
 
-            if((ok = !!(setting = setting_get_details(atoi(setting_id), NULL)))) {
+            tmask = setting_get_int_value(setting, 0);
 
-                tmask = setting_get_int_value(setting, 0);
+            if(*value == '0')
+                tmask ^= pmask;
+            else
+                tmask |= pmask;
 
-                if(*value == '0')
-                    tmask ^= pmask;
-                else
-                    tmask |= pmask;
+            if(setting->datatype == Format_XBitfield && (tmask & 0x01) == 0)
+                tmask = 0;
 
-                if(setting->datatype == Format_XBitfield && (tmask & 0x01) == 0)
-                    tmask = 0;
-
-                value = uitoa(tmask);
-            }
-        } else
-            ok = !!(setting = setting_get_details((setting_id_t)atoi(setting_id), NULL));
+            value = uitoa(tmask);
+        }
 
         if(ok)
-            status = sys_set_setting(setting->id, value);
+            status = sys_set_setting(id, value);
     }
 
     if(json) {

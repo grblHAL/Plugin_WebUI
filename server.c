@@ -42,6 +42,9 @@
 #include "../networking/http_upload.h"
 #include "../networking/fs_ram.h"
 #include "../networking/fs_stream.h"
+#if SSDP_ENABLE
+#include "../networking/ssdp.h"
+#endif
 
 #if WIFI_ENABLE && WIFI_SOFTAP
 #include "wifi.h"
@@ -223,7 +226,7 @@ static const char *command (http_request_t *request)
 
         cmd += 4;
 
-        uint_fast16_t argc = 0;
+        uint_fast16_t argc = 0, cmdv;
         char c, cp = '\0', *args = NULL, **argv = NULL, *tmp, **tmp2, *tmp3;
 
         if((ok = (args = strchr(cmd, ']')))) {
@@ -231,6 +234,10 @@ static const char *command (http_request_t *request)
             *args++ = '\0';
 
             if(*args) {
+
+                // Change escaped spaces into a NBSP pair
+                while((tmp = strstr(args, "\\ ")))
+                    tmp[0] = tmp[1] = '\xA0'; // NBSP
 
                 // Trim leading and trailing spaces
                 while(*args == ' ')
@@ -241,7 +248,7 @@ static const char *command (http_request_t *request)
                         *tmp = '\0';
                 }
 
-                // remove duplicate delimiters (spaces)
+                // Remove duplicate delimiters (spaces)
                 tmp = tmp3 = args;
                 while((c = *tmp++) != '\0') {
                     if(c != ' ' || cp != ' ')
@@ -251,7 +258,7 @@ static const char *command (http_request_t *request)
                 *tmp3 = '\0';
             }
 
-            // tokenize arguments (if any)
+            // Tokenize arguments (if any)
             if(*args) {
 
                 argc = 1;
@@ -264,18 +271,10 @@ static const char *command (http_request_t *request)
                 if(argc == 1)
                     argv = &args;
                 else if((ok = !!(argv = tmp2 = malloc(sizeof(char *) * argc)))) {
-
                     tmp = strtok(args, " ");
                     while(tmp) {
                         *tmp2++ = tmp;
                         tmp = strtok(NULL, " ");
-                    }
-
-                    tmp = args;
-                    while((c = *tmp) != '\0') {
-                        if(c == ' ')
-                            *tmp = '\0';
-                        tmp++;
                     }
                 } else {
                     http_set_response_status(request, "500 Internal Server Error");
@@ -283,7 +282,16 @@ static const char *command (http_request_t *request)
                 }
             }
 
-            uint_fast16_t cmdv = atol(cmd);
+            // Replace escaped spaces with a space
+            for(cmdv = 0; cmdv < argc; cmdv++) {
+                tmp = argv[cmdv];
+                while((tmp = strstr(tmp, "\xA0\xA0"))) {
+                    memmove(tmp, tmp + 1, strlen(tmp));
+                    *tmp = ' ';
+                }
+            }
+
+            cmdv = atol(cmd);
 
             if(cmdv == 800) {
 
@@ -771,7 +779,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.10]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.11]" ASCII_EOL);
 }
 
 void webui_init (void)
@@ -824,6 +832,9 @@ void webui_init (void)
    #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
   #endif
+  #if SSDP_ENABLE
+        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
+  #endif
     };
 
 #elif WEBUI_ENABLE == 2 // WebUI v2
@@ -854,6 +865,9 @@ void webui_init (void)
    #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
   #endif
+  #if SSDP_ENABLE
+        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
+  #endif
     };
 
 #else // WebUI v3
@@ -883,6 +897,9 @@ void webui_init (void)
         { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
    #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
+  #endif
+  #if SSDP_ENABLE
+        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
   #endif
     };
 

@@ -94,6 +94,8 @@
    ---------- Internal Memory Pool Sizes ----------
    ------------------------------------------------
 */
+
+
 /**
  * MEMP_NUM_PBUF: the number of memp struct pbufs (used for PBUF_ROM and PBUF_REF).
  * If the application sends a lot of data out of ROM (or other static memory),
@@ -146,8 +148,9 @@
  * The formula expects settings to be either '0' or '1'.
  *
  * To this default value, 1 was added for the snmp_increment timer.
+ * grblHAL: added timeouts for SSDP protocol
  */
-//#define MEMP_NUM_SYS_TIMEOUT            (LWIP_TCP + IP_REASSEMBLY + LWIP_ARP + (2*LWIP_DHCP) + LWIP_AUTOIP + LWIP_IGMP + LWIP_DNS + PPP_SUPPORT + (LWIP_IPV6 ? (1 + LWIP_IPV6_REASS + LWIP_IPV6_MLD) : 0)) + 1
+#define MEMP_NUM_SYS_TIMEOUT            (LWIP_TCP + IP_REASSEMBLY + LWIP_ARP + (2*LWIP_DHCP) + LWIP_AUTOIP + LWIP_IGMP + LWIP_DNS + PPP_SUPPORT + (LWIP_IPV6 ? (1 + LWIP_IPV6_REASS + LWIP_IPV6_MLD) : 0)) + 5
 
 /**
  * MEMP_NUM_NETBUF: the number of struct netbufs.
