@@ -48,7 +48,6 @@
 
 #if WIFI_ENABLE && WIFI_SOFTAP
 #include "wifi.h"
-#include "esp_wifi.h"
 #endif
 
 #if SDCARD_ENABLE
@@ -430,7 +429,11 @@ static const char *get_handler (http_request_t *request)
         }
 
         // if not from local AP redirect
+#if ESP_PLATFORM
         if(!internal && (ip = setting_get_value(setting_get_details(Setting_IpAddress2, NULL), 0)) && inet_pton(AF_INET, ip, &ap_ip) == 1) {
+#else
+        if(!internal && (ip = setting_get_value(setting_get_details(Setting_IpAddress2, NULL), 0)) && ip4addr_aton(ip, &ap_ip) == 1) {
+#endif 
             if(memcmp(&host_ip, &ap_ip, sizeof(ip4_addr_t))) {
 
                 char loc[75];
@@ -442,22 +445,6 @@ static const char *get_handler (http_request_t *request)
     }
 
     return http_get_uri(request);
-}
-
-static char *getAuthModeName (wifi_auth_mode_t authmode)
-{
-    static char mode[15];
-
-    sprintf(mode, "%s",
-            authmode == WIFI_AUTH_OPEN ? "open" :
-            authmode == WIFI_AUTH_WEP ? "wep" :
-            authmode == WIFI_AUTH_WPA_PSK ? "wpa-psk" :
-            authmode == WIFI_AUTH_WPA2_PSK ? "wpa-psk" :
-            authmode == WIFI_AUTH_WPA_WPA2_PSK ? "wpa-wpa2-psk" :
-            authmode == WIFI_AUTH_WPA2_ENTERPRISE ? "wpa-eap" :
-            "unknown");
-
-    return mode;
 }
 
 static const char *wifi_scan_handler (http_request_t *request)
@@ -485,7 +472,7 @@ static const char *wifi_scan_handler (http_request_t *request)
                     if((ok = (ap = cJSON_CreateObject()) != NULL))
                     {
                         ok = cJSON_AddStringToObject(ap, "ssid", (char *)ap_list->ap_records[i].ssid) != NULL;
-                        ok &= cJSON_AddStringToObject(ap, "security", getAuthModeName(ap_list->ap_records[i].authmode)) != NULL;
+                        ok &= cJSON_AddStringToObject(ap, "security", wifi_get_authmode_name(ap_list->ap_records[i].authmode)) != NULL;
                         ok &= cJSON_AddNumberToObject(ap, "primary", (double)ap_list->ap_records[i].primary) != NULL;
                         ok &= cJSON_AddNumberToObject(ap, "rssi",  (double)ap_list->ap_records[i].rssi) != NULL;
                         if(ok)
@@ -779,7 +766,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.11]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.12]" ASCII_EOL);
 }
 
 void webui_init (void)
