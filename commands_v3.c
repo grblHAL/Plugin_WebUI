@@ -584,17 +584,10 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
 
             if(now && ok) {
                 struct tm time;
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-overflow"
-#endif
                 if((hal.rtc.get_datetime(&time)))
-                    sprintf(buf, "%4d-%02d-%02dT%02d:%02d:%02d", time.tm_year + 1900, time.tm_mon + 1, time.tm_mday, time.tm_hour, time.tm_min, time.tm_sec);
+                    snprintf(buf, sizeof(buf), "%4d-%02d-%02dT%02d:%02d:%02d", time.tm_year + 1900, time.tm_mon + 1, time.tm_mday, time.tm_hour, time.tm_min, time.tm_sec);
                 else
                     strcpy(buf, "Time not available");
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
             }
 
             if(!ok || *buf == '\0' || argc) {
