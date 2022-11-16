@@ -63,11 +63,11 @@ static void webui_settings_load (void);
 
 static const setting_detail_t webui_settings[] = {
 #if WEBUI_AUTH_ENABLE
-    { Setting_AdminPassword, Group_General, "Admin Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.admin_password, NULL, NULL, false },
-    { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", NULL, "32", Setting_NonCore, &webui.user_password, NULL, NULL, false },
+    { Setting_AdminPassword, Group_General, "Admin Password", NULL, Format_Password, "x(32)", "8", "32", Setting_NonCore, &webui.admin_password, NULL, NULL, { .allow_null = On } },
+    { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", "8", "32", Setting_NonCore, &webui.user_password, NULL, NULL, { .allow_null = On } },
 #endif
-    { Setting_WebUiTimeout, Group_General, "WebUI timeout", "minutes", Format_Int16, "##0", NULL, "999", Setting_NonCore, &webui.session_timeout, NULL, NULL, false },
-    { Setting_WebUiAutoReportInterval, Group_General, "WebUI auto report interval", "milliseconds", Format_Int16, "###0", NULL, "9999", Setting_NonCore, &webui.report_interval, NULL, NULL, true },
+    { Setting_WebUiTimeout, Group_General, "WebUI timeout", "minutes", Format_Int16, "##0", NULL, "999", Setting_NonCore, &webui.session_timeout, NULL, NULL },
+    { Setting_WebUiAutoReportInterval, Group_General, "WebUI auto report interval", "milliseconds", Format_Int16, "###0", NULL, "9999", Setting_NonCore, &webui.report_interval, NULL, NULL, { .reboot_required = On } },
 };
 
 #ifndef NO_SETTINGS_DESCRIPTIONS

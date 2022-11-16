@@ -747,7 +747,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
         ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name + name_ofs : strgetentry(opt, setting->format, bit, ','));
         if(setting->unit)
             ok &= !!cJSON_AddStringToObject(settingobj, "U", setting->unit);
-        if(setting->reboot_required)
+        if(setting->flags.reboot_required)
             ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
 
         if(ok) switch(setting->datatype) {
@@ -829,14 +829,16 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
                             ok &= !!cJSON_AddStringToObject(settingobj, "E", uitoa(strlen(fraction)));
                     }
 
-                    if(min && !setting_is_list(setting))
-                        ok &= !!cJSON_AddStringToObject(settingobj, "M", min);
+                    if(min && !setting_is_list(setting)) {
+                        ok &= !!cJSON_AddStringToObject(settingobj, "M", setting->flags.allow_null ? "0" : min);
+                        if(setting->flags.allow_null)
+                            ok &= !!cJSON_AddStringToObject(settingobj, "MS", min);
+                    }
 
                     if(max)
                         ok &= !!cJSON_AddStringToObject(settingobj, "S", max);
                 }
                 break;
-
         }
 
         if(ok)
