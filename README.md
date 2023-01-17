@@ -23,10 +23,12 @@ The following drivers can be used with this plugin:
 #### Installation:
 
 Enable WebUI support by uncommenting `#define WEBUI_ENABLE 1` in _my_machine.h_ and recompile/reflash.
+This adds backends for both WebUI v2 and v3, set the define value to 2 or 3 to only add v2 or v3.
 
-Ensure `$360` \(HTTP port\) is set to `80`, `$307` \(Websocket port\) is set to `81` and `$70` has flags set to enable both the http and websocket daemons. `15` is a safe value. Reboot.
+Ensure `$306` \(HTTP port\) is set to `80`, `$307` \(Websocket port\) is set to `81` and `$70` has flags set to enable both the http and websocket daemons. `15` is a safe value. Reboot.
 
-For drivers with FlashFS support \(see table above\) enter `<ip address>/` or `<ip address>/?forcefallback=yes` if it is for an update.  
+For drivers with FlashFS support \(see table above\) enter `<ip address>/` or `<ip address>/?forcefallback=yes` as the browser URL,
+the latter if it is for an update.  
 Replace `<ip address>` with the controller IP address. Tip: Use `$I` to find the IP address if dynamically assigned. 
 Then click on the _Interface_ top menu item in the page shown and navigate to the _dist/CNC/grblHAL_ folder and download _index.html.gz_.
 You may download _index.html.gz_ directly via this [link](https://raw.githubusercontent.com/luc-github/ESP3D-WEBUI/3.0/dist/CNC/GRBLHal/index.html.gz).
@@ -59,4 +61,4 @@ See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/tree/3bc2b5690574
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2022-09-13
+2023-01-17
