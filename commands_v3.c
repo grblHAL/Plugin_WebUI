@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2022 Terje Io
+  Copyright (c) 2019-2023 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -961,8 +961,9 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
     if(json) {
 
         cJSON *root;
+        const char *msg = errors_get_description(status);
 
-        if((ok = !!(root = json_create_response_hdr(command->id, false, status == Status_OK, NULL, status == Status_OK ? "ok" : "Set failed"))))
+        if((ok = !!(root = json_create_response_hdr(command->id, false, status == Status_OK, NULL, status == Status_OK ? "ok" : (msg ? msg : "Set failed")))))
             json_write_response(root, file);
 
     } else
