@@ -2,21 +2,7 @@
 
 Adds [ESP32-WEBUI](https://github.com/luc-github/ESP3D-webui) support for some networking capable boards and drivers.
 
-Under development and partially implemented.  
-
 This plugin sits on top of a heavily modified [lwIP](http://savannah.nongnu.org/projects/lwip/) raw mode http daemon.  
-It requires lwIP version 2.1.0 or later, however 2.0.x can be patched to make it work.
-
-The following drivers can be used with this plugin:
-
-| Driver                                                            |lwIP version|patch required| FlashFS              |
-|-------------------------------------------------------------------|------------|--------------|----------------------|
-| [iMXRT1062 \(Teensy 4.1\)](https://github.com/grblHAL/iMXRT1062)  | 2.0.2      | yes          | littlefs             |
-| [RP2040 \(Pi Pico W\)](https://github.com/grblHAL/RP2040)         | 2.1.1      | no           | littlefs             |
-| [ESP32](https://github.com/grblHAL/ESP32)                         | ?          | no           | littlefs             |
-| [STM32F756](https://github.com/grblHAL/STM32F7xx)                 | 2.1.2      | no           | no                   |
-| [STM32H7xx](https://github.com/dresco/STM32H7xx)                  | ?          | no           | TBA                  |
-| [MSP432E401Y](https://github.com/grblHAL/MSP432E401Y)             | 2.0.2      | yes          | littlefs<sup>1</sup> |
 
 <sup>1</sup> FlashFS is erased when reflashing firmware!
 
@@ -39,15 +25,6 @@ If the SD card is mounted in the controller then the folder can be created and t
 
 Finally enter the controller IP address in a browser window, if all is well the WebUI will then be loaded.
 
-#### lwIP patch:
-
-lwIP v 2.1.0 introduced an alternate TCP API for SSL support, the new API is used by the http daemon and it fails if not available even if SSL support is not required.  
-Luckily the new API can be bypassed by mapping the new API to the original.  The 2.1.0 distribution has a file that does this, this needs to be copied to the lwIP source code folder.  
-In addition several symbols that controls lwIP features has to added or modified.
-I have added these to Eclipse based build configurations, but sadly the Arduino IDE does not allow that.  
-
-See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/tree/3bc2b569057495f66e891c88bd073bc71ace8b83/lwIP%20patch) for instructions for how to apply it.
-
 #### Alternative UI:
 
 [grblTouch](https://github.com/karoria/grblTouch) by @karoria
@@ -61,4 +38,4 @@ See the patch [readme](https://github.com/grblHAL/Plugin_WebUI/tree/3bc2b5690574
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2023-01-17
+2023-02-13

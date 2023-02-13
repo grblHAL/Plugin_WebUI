@@ -967,7 +967,7 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
             json_write_response(root, file);
 
     } else
-        report_status_message(status);
+        grbl.report.status_message(status);
 
     return status;
 }

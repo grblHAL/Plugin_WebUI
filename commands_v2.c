@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2022 Terje Io
+  Copyright (c) 2019-2023 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -631,7 +631,7 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
         }
     }
 
-    report_status_message(status);
+    grbl.report.status_message(status);
 
     return status;
 }
