@@ -758,6 +758,11 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
     else if(!strcmp(uri, "/ap_login.html"))
         file_search(path, uri, file, mode);
 #endif
+    else if(strlookup(".gz", uri, '.') == -1) {
+        if((*file = vfs_open(strcat(uri, ".gz"), mode)) == NULL)
+            *(strchr(uri, '\0') - 3) = '\0';
+    }
+
     return uri;
 }
 
@@ -766,7 +771,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.14]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.15]" ASCII_EOL);
 }
 
 void webui_init (void)

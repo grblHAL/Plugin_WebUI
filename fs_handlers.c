@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2020-2022 Terje Io
+  Copyright (c) 2020-2023 Terje Io
 
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
@@ -227,9 +227,13 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 //        return ESP_OK;
 
     *status = *path = '\0';
-    strcpy(path, drive->path);
 
     http_get_param_value(request, "path", filename, sizeof(filename));
+    if(strncmp(filename, drive->path, strlen(drive->path)))
+        strcpy(path, drive->path);
+    else
+        strcpy(path, "/");
+
     strcat(path, *filename == '/' ? filename + 1 : filename);
 
     http_get_param_value(request, "filename", filename, sizeof(filename));
@@ -397,10 +401,12 @@ static void fs_on_upload_name_parsed (char *name, void *data)
     char *drive_path = (char *)data;
 
     size_t len = strlen(name), plen = strlen(drive_path);
-    if(*name == '/')
+    if(!strncmp(name, drive_path, plen))
+        plen = 0;
+    else if(*name == '/')
         plen--;
 
-    if(len + plen <= HTTP_UPLOAD_MAX_PATHLENGTH) {
+    if(plen && len + plen <= HTTP_UPLOAD_MAX_PATHLENGTH) {
         memmove(name + plen, name, len + 1);
         memcpy(name, drive_path, plen);
     }
