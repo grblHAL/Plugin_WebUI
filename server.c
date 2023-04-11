@@ -739,8 +739,11 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
 #if WEBUI_INFLASH
         char fallback[5];
         if(http_get_param_value(request, "forcefallback", fallback, sizeof(fallback)) != NULL && !strcmp(fallback, "yes")) {
-            if((*file = vfs_open("/embedded/index.html.gz", mode)))
-                uri = "/index.html.gz";
+            if((*file = vfs_open("/embedded/index.html.gz", mode))) {
+                uri = "/index.html";
+                request->encoding = HTTPEncoding_GZIP;
+                strcpy(sys_path, path);
+            }
             return uri;
         }
 #endif
@@ -750,7 +753,8 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
             if(s)
                 *s = '\0';
             strcpy(sys_path, path);
-            uri = "/index.html.gz";
+            uri = "/index.html";
+            request->encoding = HTTPEncoding_GZIP;
         }
     } else if(!strcmp(uri, "/favicon.ico") || !strcmp(uri, "/preferences.json"))
         file_search(strcpy(path, *sys_path == '\0' ? "/" : sys_path), uri, file, mode);
@@ -758,9 +762,11 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
     else if(!strcmp(uri, "/ap_login.html"))
         file_search(path, uri, file, mode);
 #endif
-    else if(strlookup(".gz", uri, '.') == -1) {
-        if((*file = vfs_open(strcat(uri, ".gz"), mode)) == NULL)
-            *(strchr(uri, '\0') - 3) = '\0';
+
+    if(*file == NULL && strlookup(".gz", uri, '.') == -1) {
+        if((*file = vfs_open(strcat(uri, ".gz"), mode)))
+            request->encoding = HTTPEncoding_GZIP;
+        *(strchr(uri, '\0') - 3) = '\0';
     }
 
     return uri;
@@ -771,7 +777,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.15]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.16]" ASCII_EOL);
 }
 
 void webui_init (void)
