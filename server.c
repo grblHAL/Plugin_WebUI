@@ -748,13 +748,18 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
         }
 #endif
 
-        if(file_search(path, "/index.html.gz", file, mode)) {
+        if(file_search(path, "/index.html.gz", file, mode))
+            request->encoding = HTTPEncoding_GZIP;
+        else
+            file_search(path, "/index.html", file, mode);
+
+        if(*file) {
             char *s = strstr(path, "index.html");
             if(s)
                 *s = '\0';
-            strcpy(sys_path, path);
+            vfs_fixpath(path);
+            strcpy(sys_path, flashfs == NULL || strcmp(path, "/embedded") ? path : flashfs->path);
             uri = "/index.html";
-            request->encoding = HTTPEncoding_GZIP;
         }
     } else if(!strcmp(uri, "/favicon.ico") || !strcmp(uri, "/preferences.json"))
         file_search(strcpy(path, *sys_path == '\0' ? "/" : sys_path), uri, file, mode);
@@ -764,7 +769,7 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
 #endif
 
     if(*file == NULL && strlookup(".gz", uri, '.') == -1) {
-        if((*file = vfs_open(strcat(uri, ".gz"), mode)))
+        if((*file = vfs_open(strcat((char *)uri, ".gz"), mode)))
             request->encoding = HTTPEncoding_GZIP;
         *(strchr(uri, '\0') - 3) = '\0';
     }

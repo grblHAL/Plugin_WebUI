@@ -472,7 +472,7 @@ vfs_drive_t *fs_get_sd_drive (void)
     if((dh = vfs_drives_open()))
     {
         while((drive = vfs_drives_read(dh))) {
-            if(!strcmp(drive->name, "FatFs")) {
+            if(drive->removable) {
                 memcpy(&sd, drive, sizeof(vfs_drive_t));
                 break;
             }
@@ -493,7 +493,7 @@ vfs_drive_t *fs_get_flash_drive (void)
     if((dh = vfs_drives_open()))
     {
         while((drive = vfs_drives_read(dh))) {
-            if(!strcmp(drive->name, "spiffs") || !strcmp(drive->name, "littlefs")) {
+            if(!(drive->removable || drive->mode.read_only)) {
                 memcpy(&flash, drive, sizeof(vfs_drive_t));
                 break;
             }
