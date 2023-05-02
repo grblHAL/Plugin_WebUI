@@ -954,8 +954,20 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
             value = uitoa(tmask);
         }
 
-        if(ok)
+        if(ok) {
+
+            // Block disable of websocket daemon from WebUI
+            if(setting->id == Setting_NetworkServices) {
+                network_services_t services;
+                services.mask = (uint8_t)atoi(value);
+                if(!services.websocket) {
+                    services.websocket = On;
+                    value = uitoa(services.mask);
+                }
+            }
+
             status = sys_set_setting(id, value);
+        }
     }
 
     if(json) {

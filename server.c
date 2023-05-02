@@ -158,7 +158,9 @@ void websocket_on_frame_received (websocket_t *websocket, void *data, size_t siz
 
 static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
 {
-    if((is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
+    network_info_t *network = networking_get_info();
+
+    if(network->status.services.http && (is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
         *is_binary = true;
          client.websocket = websocket;
          websocket_set_stream_flags(websocket, (io_stream_state_t){ .connected = true, .webui_connected = true });
@@ -721,7 +723,7 @@ bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mo
 #endif
     }
 
-    return file != NULL;
+    return *file != NULL;
 }
 
 const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t **file, const char *mode)
@@ -782,7 +784,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.16]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.17]" ASCII_EOL);
 }
 
 void webui_init (void)
@@ -826,6 +828,9 @@ void webui_init (void)
   #if WEBUI_AUTH_ENABLE
         { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
   #endif
+  #if SSDP_ENABLE
+        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
+  #endif
   #if WIFI_ENABLE && WIFI_SOFTAP
         { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
         { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
@@ -834,9 +839,6 @@ void webui_init (void)
         { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
    #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
-  #endif
-  #if SSDP_ENABLE
-        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
   #endif
     };
 
@@ -859,6 +861,9 @@ void webui_init (void)
   #if WEBUI_AUTH_ENABLE
         { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
   #endif
+  #if SSDP_ENABLE
+        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
+  #endif
   #if WIFI_ENABLE && WIFI_SOFTAP
         { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
         { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
@@ -867,9 +872,6 @@ void webui_init (void)
         { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
    #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
-  #endif
-  #if SSDP_ENABLE
-        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
   #endif
     };
 
@@ -892,6 +894,9 @@ void webui_init (void)
   #if WEBUI_AUTH_ENABLE
         { .uri = "/login",    .method = HTTP_Post,    .handler = login_handler_post },
   #endif
+  #if SSDP_ENABLE
+        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
+  #endif
   #if WIFI_ENABLE && WIFI_SOFTAP
         { .uri = "/wifi",     .method = HTTP_Get,     .handler  = wifi_scan_handler },
         { .uri = "/wifi",     .method = HTTP_Post,    .handler  = wifi_connect_handler },
@@ -900,9 +905,6 @@ void webui_init (void)
         { .uri = "/wifi",     .method = HTTP_Options, .handler  = wifi_options_handler },
    #endif
         { .uri = "/*",        .method = HTTP_Get,     .handler = get_handler }, // Must be last!
-  #endif
-  #if SSDP_ENABLE
-        { .uri = "/" SSDP_LOCATION_DOC, .method = HTTP_Get, .handler = ssdp_handler_get },
   #endif
     };
 
