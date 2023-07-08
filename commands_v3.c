@@ -1123,7 +1123,7 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
     } else {
 
         if(hal.get_free_mem)
-            vfs_puts(strappend(buf, 3, "free mem", btoa(hal.get_free_mem()), WEBUI_EOL), file);
+            vfs_puts(strappend(buf, 3, "free mem: ", btoa(hal.get_free_mem()), WEBUI_EOL), file);
 
         //        vfs_puts(strappend(buf, 3, "chip id: ", "0", WEBUI_EOL), file);
 
@@ -1182,7 +1182,7 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
 #endif
 //          vfs_puts("flash: OFF" WEBUI_EOL);
         if(sdfs)
-            vfs_puts(strappend(buf, 4, "sd direct (", sdfs->name, ")" WEBUI_EOL), file);
+            vfs_puts(strappend(buf, 3, "sd direct (", sdfs->name, ")" WEBUI_EOL), file);
         else
             vfs_puts("sd: none" WEBUI_EOL, file);
         vfs_puts("targetfw: " FIRMWARE_TARGET WEBUI_EOL, file);
