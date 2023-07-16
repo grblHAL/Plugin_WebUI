@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2022 Terje Io
+  Copyright (c) 2022-2023 Terje Io
 
   File data is extracted from files Copyright (c) 2021 Luc Lebosse
   https://github.com/luc-github/ESP3D-webui
@@ -1140,6 +1140,16 @@ static size_t fs_tell (vfs_file_t *file)
     return fileh->file->size - fileh->remaining;
 }
 
+static int fs_seek (vfs_file_t *file, size_t offset)
+{
+    embedded_filehandle_t *fileh = (embedded_filehandle_t *)&file->handle;
+
+    if(fileh->file->size <= offset)
+        fileh->remaining = fileh->file->size - offset;
+
+    return fileh->file->size < offset ? fileh->remaining : -1;
+}
+
 static bool fs_eof (vfs_file_t *file)
 {
     embedded_filehandle_t *fileh = (embedded_filehandle_t *)&file->handle;
@@ -1190,6 +1200,7 @@ void fs_embedded_mount (void)
         .fread = fs_read,
         .fwrite = fs_write,
         .ftell = fs_tell,
+        .fseek = fs_seek,
         .feof = fs_eof,
         .funlink = fs_unlink,
         .fmkdir = fs_dirop,
