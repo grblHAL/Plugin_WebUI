@@ -784,7 +784,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.18]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.19]" ASCII_EOL);
 }
 
 void webui_init (void)

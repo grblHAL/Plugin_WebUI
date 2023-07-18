@@ -713,6 +713,7 @@ static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fa
 
 // ESP400
 
+
 // Add setting to the JSON response array
 static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
 {
@@ -723,12 +724,23 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
 
     if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject()))) {
 
-        char opt[50];
-        uint32_t name_ofs = *setting->name == '?' ? 2 : 0;
-        const setting_group_detail_t *group = setting_get_group_details(setting->group + offset);
+        char opt[50], name[50], *q;
+        uint_fast8_t suboffset = setting->flags.subgroups ? offset / setting->flags.increment : offset;
+        const setting_group_detail_t *group = setting_get_group_details(setting->group + suboffset);
 
         if(setting->datatype == Format_Bool)
             bit = 0;
+
+        if(setting->group == Group_Axis0) {
+            strcpy(name, setting->name + 1);
+            *name = CAPS(*name);
+        } else if((q = strchr(setting->name, '?'))) {
+            strncpy(name, setting->name, q - setting->name);
+            name[q - setting->name] = '\0';
+            strcat(name, uitoa(suboffset + 1));
+            strcat(name, q + 1);
+        } else
+            strcpy(name, setting->name);
 
         strcpy(opt, group->name);
         strcat(opt, "/");
@@ -744,7 +756,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
         ok &= !!cJSON_AddStringToObject(settingobj, "P", opt);
         ok &= !!cJSON_AddStringToObject(settingobj, "T", tmap[setting->datatype]);
         ok &= !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
-        ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name + name_ofs : strgetentry(opt, setting->format, bit, ','));
+        ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? name : strgetentry(opt, setting->format, bit, ','));
         if(setting->unit)
             ok &= !!cJSON_AddStringToObject(settingobj, "U", setting->unit);
         if(setting->flags.reboot_required)
