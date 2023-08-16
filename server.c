@@ -359,7 +359,10 @@ static const char *command (http_request_t *request)
         return file_is_json ? "/ram/qry.json" : "/ram/qry.txt";
     }
 
-    if(strlen(data) == 1)
+    if(*data == '\0')
+        websocketd_RxPutC(ASCII_LF);
+
+    else if(*(data + 1) == '\0')
         websocketd_RxPutC(*data);
 
     else {
@@ -784,7 +787,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.19]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.20]" ASCII_EOL);
 }
 
 void webui_init (void)
