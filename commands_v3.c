@@ -1342,7 +1342,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
 {
     bool ok = false;
     char *cmd = webui_get_arg(argc, argv, NULL), msg[50];
-    vfs_drive_t *drive = fs_get_flash_drive();
+    vfs_drive_t *drive = fs_get_flash_drive(true);
 
     if(cmd == NULL || strlen(cmd) == 0)
         strcpy(msg, "Missing parameter");
@@ -1438,7 +1438,7 @@ static status_code_t flash_format (const struct webui_cmd_binding *command, uint
     bool ok;
     char *cmd = webui_get_arg(argc, argv, NULL);
 
-    vfs_drive_t *drive = fs_get_flash_drive();
+    vfs_drive_t *drive = fs_get_flash_drive(true);
 
     if((ok = !strcmp(cmd, "FORMATFS") && drive)) {
         if(!json)
@@ -1479,13 +1479,13 @@ static status_code_t sdcard_format (const struct webui_cmd_binding *command, uin
 // ESP720
 static status_code_t flashfs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
-    return fs_list_files(command, argc, argv, json, file, fs_get_flash_drive());
+    return fs_list_files(command, argc, argv, json, file, fs_get_flash_drive(true));
 }
 
 // ESP730
 static status_code_t flashfs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
-    return fs_action(command, argc, argv, json, file, fs_get_flash_drive());
+    return fs_action(command, argc, argv, json, file, fs_get_flash_drive(true));
 }
 
 // ESP740
@@ -1518,7 +1518,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     uint_fast16_t idx;
     char buf[200], hostpath[16], axisletters[10];
     network_info_t *network = networking_get_info();
-    vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive();
+    vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive(webui_maintenance_mode());
 
     strcpy(hostpath, webui_get_sys_path());
     if(*hostpath == '\0')

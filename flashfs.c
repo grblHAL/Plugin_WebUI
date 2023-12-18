@@ -41,17 +41,17 @@
 
 const char *flashfs_handler (http_request_t *request)
 {
-    return fs_action_handler(request, fs_get_flash_drive());
+    return fs_action_handler(request, fs_get_flash_drive(true));
 }
 
 const char *flashfs_download_handler (http_request_t *request)
 {
-    return fs_download_handler(request, fs_get_flash_drive());
+    return fs_download_handler(request, fs_get_flash_drive(true));
 }
 
 const char *flashfs_upload_handler (http_request_t *request)
 {
-    fs_upload_handler(request, fs_get_flash_drive());
+    fs_upload_handler(request, fs_get_flash_drive(true));
 
     return NULL;
 }

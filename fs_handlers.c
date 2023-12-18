@@ -450,7 +450,7 @@ vfs_drive_t *fs_get_root_drive (void)
 
     if((dh = vfs_drives_open()))
     {
-        while((drive = vfs_drives_read(dh))) {
+        while((drive = vfs_drives_read(dh, true))) {
             if(!strcmp(drive->name, "/")) {
                 memcpy(&root, drive, sizeof(vfs_drive_t));
                 break;
@@ -471,7 +471,7 @@ vfs_drive_t *fs_get_sd_drive (void)
 
     if((dh = vfs_drives_open()))
     {
-        while((drive = vfs_drives_read(dh))) {
+        while((drive = vfs_drives_read(dh, false))) {
             if(drive->removable) {
                 memcpy(&sd, drive, sizeof(vfs_drive_t));
                 break;
@@ -483,7 +483,7 @@ vfs_drive_t *fs_get_sd_drive (void)
     return drive ? &sd : NULL;
 }
 
-vfs_drive_t *fs_get_flash_drive (void)
+vfs_drive_t *fs_get_flash_drive (bool add_hidden)
 {
     static vfs_drive_t flash;
 
@@ -492,11 +492,12 @@ vfs_drive_t *fs_get_flash_drive (void)
 
     if((dh = vfs_drives_open()))
     {
-        while((drive = vfs_drives_read(dh))) {
+        while((drive = vfs_drives_read(dh, add_hidden))) {
             if(!(drive->removable || drive->mode.read_only)) {
                 memcpy(&flash, drive, sizeof(vfs_drive_t));
                 break;
-            }
+            } else
+                drive = NULL;
         }
         vfs_drives_close(dh);
     }

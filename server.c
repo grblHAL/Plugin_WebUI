@@ -78,7 +78,7 @@ typedef struct {
     uint32_t activity;
 } webui_client_t;
 
-static bool file_is_json = false, is_v3 = false;
+static bool file_is_json = false, is_v3 = false, maintenance_mode = false;
 static char sys_path[32] = ""; // Directory where index.html.gz was found
 static webui_client_t client;
 static driver_setup_ptr driver_setup;
@@ -87,6 +87,11 @@ static on_report_options_ptr on_report_options;
 static websocket_on_client_connect_ptr on_client_connect;
 static websocket_on_client_disconnect_ptr on_client_disconnect;
 static websocket_on_protocol_select_ptr on_protocol_select;
+
+bool webui_maintenance_mode (void)
+{
+    return maintenance_mode;
+}
 
 char *webui_get_sys_path (void)
 {
@@ -719,8 +724,12 @@ bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mo
 {
     if(*path == '\0' || (*file = vfs_open(strcat(path, uri + 1), mode)) == NULL) {
 #if WEBUI_INFLASH
-        if((*file = vfs_open(strcat(strcpy(path, "/www"), uri), mode)) == NULL)
-            *file = vfs_open(strcat(strcpy(path, "/embedded"), uri), mode);
+        if((*file = vfs_open(strcat(strcpy(path, "/www"), uri), mode)) == NULL) {
+            if((*file = vfs_open(strcat(strcpy(path, "/embedded"), uri), mode))) {
+                if(!strcmp(uri, "/index.html.gz"))
+                    maintenance_mode = true;
+            }
+        }
 #else
         *file = vfs_open(strcat(strcpy(path, "/www"), uri), mode);
 #endif
@@ -732,7 +741,7 @@ bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mo
 const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t **file, const char *mode)
 {
     char path[32];
-    vfs_drive_t *flashfs = fs_get_flash_drive();
+    vfs_drive_t *flashfs = fs_get_flash_drive(true);
 
     if(flashfs)
         strcpy(path, flashfs->path);
@@ -747,11 +756,14 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
             if((*file = vfs_open("/embedded/index.html.gz", mode))) {
                 uri = "/index.html";
                 request->encoding = HTTPEncoding_GZIP;
+                maintenance_mode = true;
                 strcpy(sys_path, path);
             }
             return uri;
         }
 #endif
+
+        maintenance_mode = false;
 
         if(file_search(path, "/index.html.gz", file, mode))
             request->encoding = HTTPEncoding_GZIP;
@@ -787,7 +799,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.20]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:WebUI v0.21]" ASCII_EOL);
 }
 
 void webui_init (void)

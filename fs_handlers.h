@@ -2,7 +2,7 @@
 
 vfs_drive_t *fs_get_root_drive (void);
 vfs_drive_t *fs_get_sd_drive (void);
-vfs_drive_t *fs_get_flash_drive (void);
+vfs_drive_t *fs_get_flash_drive (bool add_hidden);
 const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive);
 const char *fs_download_handler (http_request_t *request, vfs_drive_t *drive);
 const char *fs_upload_handler (http_request_t *request, vfs_drive_t *drive);
