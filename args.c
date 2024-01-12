@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2022 Terje Io
+  Copyright (c) 2022-2024 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@ bool webui_get_bool_arg (uint_fast16_t argc, char **argv, char *arg)
     else if(argc) {
         char tmp[16];
         memset(tmp, 0, sizeof(tmp));
-        if(webui_get_arg(argc, argv, strncpy(tmp, arg, strlen(arg) - 1)))
+        if(webui_get_arg(argc, argv, strncpy(tmp, arg, min(strlen(arg) - 1, sizeof(tmp) - 1))))
             return true;
     }
 
