@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2022 Terje Io
+  Copyright (c) 2022-2024 Terje Io
 
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
@@ -127,7 +127,7 @@ static void webui_auto_report (sys_state_t state)
     on_execute_realtime(state);
 }
 
-static void start_auto_report (sys_state_t state)
+static void start_auto_report (void *data)
 {
     on_execute_realtime = grbl.on_execute_realtime;
     grbl.on_execute_realtime = webui_auto_report;
@@ -139,7 +139,7 @@ static void webui_settings_load (void)
         webui_settings_restore();
 
     if(webui.report_interval)
-        protocol_enqueue_rt_command(start_auto_report);
+        protocol_enqueue_foreground_task(start_auto_report, NULL);
 }
 
 #if WEBUI_AUTH_ENABLE
