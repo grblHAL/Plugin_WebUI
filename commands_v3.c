@@ -5,20 +5,20 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2023 Terje Io
+  Copyright (c) 2019-2024 Terje Io
 
-  Grbl is free software: you can redistribute it and/or modify
+  grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Grbl is distributed in the hope that it will be useful,
+  grblHAL is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+  along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "driver.h"
@@ -232,23 +232,22 @@ static cJSON *json_create_response_hdr (uint_fast16_t cmd, bool array, bool ok, 
 
 static bool json_write_response (cJSON *json, vfs_file_t *file)
 {
+    bool ok = false;
+
     if(json) {
 
         char *resp = cJSON_PrintUnformatted(json);
 
-        if(resp) {
-
+        if((ok = !!resp)) {
+            cJSON_Delete(json);
             data_is_json();
-
             vfs_puts(resp, file);
-
             cJSON_free(resp);
-        }
-
-        cJSON_Delete(json);
+        } else
+            cJSON_Delete(json);
     }
 
-    return !!json;
+    return ok;
 }
 
 // Add value to the JSON response array
@@ -261,7 +260,7 @@ static bool json_add_value (cJSON *settings, char *id, char *value)
     if((ok = !!(setting = cJSON_CreateObject())))
     {
         ok  = !!cJSON_AddStringToObject(setting, "id", id);
-        ok &= !!cJSON_AddStringToObject(setting, "value", value);
+        ok = ok & !!cJSON_AddStringToObject(setting, "value", value);
 
         if(ok)
             cJSON_AddItemToArray(settings, setting);
@@ -300,8 +299,8 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
 
             if((ok = !!(root = json_create_response_hdr(command->id, false, cmdp != NULL, &data, cmdp == NULL ? buf : NULL)))) {
                 if(cmdp) {
-                    ok &= !!cJSON_AddStringToObject(data, "id", uitoa(cmdp->id));
-                    ok &= !!cJSON_AddStringToObject(data, "help", buf);
+                    ok = ok & !!cJSON_AddStringToObject(data, "id", uitoa(cmdp->id));
+                    ok = ok & !!cJSON_AddStringToObject(data, "help", buf);
                 }
             }
         } else {
@@ -319,8 +318,8 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
                 {
                     sprintf(buf, "[ESP%d]%s", webui_commands[i].id, webui_commands[i].help);
 
-                    ok &= !!cJSON_AddStringToObject(msg, "id", uitoa(webui_commands[i].id));
-                    ok &= !!cJSON_AddStringToObject(msg, "help", buf);
+                    ok = ok & !!cJSON_AddStringToObject(msg, "id", uitoa(webui_commands[i].id));
+                    ok = ok & !!cJSON_AddStringToObject(msg, "help", buf);
 
                     if(ok)
                         cJSON_AddItemToArray(data, msg);
@@ -440,13 +439,13 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
                         const setting_detail_t *setting;
 
                         if((setting = setting_get_details(Setting_IpAddress, 0)))
-                            ok &= !!cJSON_AddStringToObject(data, "ip", setting_get_value(setting, 0));
+                            ok = ok & !!cJSON_AddStringToObject(data, "ip", setting_get_value(setting, 0));
 
                         if((setting = setting_get_details(Setting_Gateway, 0)))
-                            ok &= !!cJSON_AddStringToObject(data, "gw", setting_get_value(setting, 0));
+                            ok = ok & !!cJSON_AddStringToObject(data, "gw", setting_get_value(setting, 0));
 
                         if((setting = setting_get_details(Setting_NetMask, 0)))
-                            ok &= !!cJSON_AddStringToObject(data, "msk", setting_get_value(setting, 0));
+                            ok = ok & !!cJSON_AddStringToObject(data, "msk", setting_get_value(setting, 0));
                     }
                 } else {
                     char ip[16], gw[16], mask[16];
@@ -610,11 +609,11 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
 
                 if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
 
-                    ok &= !!cJSON_AddStringToObject(data, "srv1", "");
-                    ok &= !!cJSON_AddStringToObject(data, "srv2", "");
-                    ok &= !!cJSON_AddStringToObject(data, "srv3", "");
-                    ok &= !!cJSON_AddStringToObject(data, "zone", "GMT");
-                    ok &= !!cJSON_AddStringToObject(data, "dst", "NO");
+                    ok = ok & !!cJSON_AddStringToObject(data, "srv1", "");
+                    ok = ok & !!cJSON_AddStringToObject(data, "srv2", "");
+                    ok = ok & !!cJSON_AddStringToObject(data, "srv3", "");
+                    ok = ok & !!cJSON_AddStringToObject(data, "zone", "GMT");
+                    ok = ok & !!cJSON_AddStringToObject(data, "dst", "NO");
 
                     json_write_response(root, file);
                 }
@@ -720,7 +719,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
     static const char *tmap[] = { "B", "M", "X", "B", "M", "I", "F", "S", "S", "A", "I", "I" };
 
     bool ok;
-    cJSON *settingobj;
+    cJSON *settingobj = NULL;
 
     if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject()))) {
 
@@ -746,21 +745,21 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
         strcat(opt, "/");
         strcat(opt, group->name);
 
-        ok  = !!cJSON_AddStringToObject(settingobj, "F", opt);
+        ok = !!cJSON_AddStringToObject(settingobj, "F", opt);
 
         strcpy(opt, uitoa(setting->id + offset));
         if(bit >= 0) {
             strcat(opt, "#");
             strcat(opt, uitoa(bit));
         }
-        ok &= !!cJSON_AddStringToObject(settingobj, "P", opt);
-        ok &= !!cJSON_AddStringToObject(settingobj, "T", tmap[setting->datatype]);
-        ok &= !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
-        ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? name : strgetentry(opt, setting->format, bit, ','));
+        ok = ok & !!cJSON_AddStringToObject(settingobj, "P", opt);
+        ok = ok & !!cJSON_AddStringToObject(settingobj, "T", tmap[setting->datatype]);
+        ok = ok & !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
+        ok = ok & !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? name : strgetentry(opt, setting->format, bit, ','));
         if(setting->unit)
-            ok &= !!cJSON_AddStringToObject(settingobj, "U", setting->unit);
+            ok = ok & !!cJSON_AddStringToObject(settingobj, "U", setting->unit);
         if(setting->flags.reboot_required)
-            ok &= !!cJSON_AddStringToObject(settingobj, "R", "1");
+            ok = ok & !!cJSON_AddStringToObject(settingobj, "R", "1");
 
         if(ok) switch(setting->datatype) {
 
@@ -838,23 +837,25 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
                             max = opt;
 
                         if(setting->datatype == Format_Decimal)
-                            ok &= !!cJSON_AddStringToObject(settingobj, "E", uitoa(strlen(fraction)));
+                            ok = ok & !!cJSON_AddStringToObject(settingobj, "E", uitoa(strlen(fraction)));
                     }
 
                     if(min && !setting_is_list(setting)) {
-                        ok &= !!cJSON_AddStringToObject(settingobj, "M", setting->flags.allow_null ? "0" : min);
+                        ok = ok & !!cJSON_AddStringToObject(settingobj, "M", setting->flags.allow_null ? "0" : min);
                         if(setting->flags.allow_null)
-                            ok &= !!cJSON_AddStringToObject(settingobj, "MS", min);
+                            ok = ok & !!cJSON_AddStringToObject(settingobj, "MS", min);
                     }
 
                     if(max)
-                        ok &= !!cJSON_AddStringToObject(settingobj, "S", max);
+                        ok = ok & !!cJSON_AddStringToObject(settingobj, "S", max);
                 }
                 break;
         }
 
         if(ok)
             cJSON_AddItemToArray(settings, settingobj);
+        else
+            cJSON_Delete(settingobj);
     }
 
     return ok;
@@ -883,11 +884,11 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
     setting_detail_t **all_settings, **psetting;
 
     if((ok = root != NULL)) {
-        ok &= !!cJSON_AddStringToObject(root, "cmd", uitoa(command->id));
-        ok &= !!cJSON_AddStringToObject(root, "status", "ok");
+        ok = ok & !!cJSON_AddStringToObject(root, "cmd", uitoa(command->id));
+        ok = ok & !!cJSON_AddStringToObject(root, "status", "ok");
     }
 
-    if((ok &= !!(settings = cJSON_AddArrayToObject(root, "data")))) {
+    if((ok = ok & !!(settings = cJSON_AddArrayToObject(root, "data")))) {
 
         do {
             n_settings += details->n_settings;
@@ -912,7 +913,7 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
             qsort(all_settings, n_settings, sizeof(setting_detail_t *), cmp_settings);
 
             for(idx = 0; idx < n_settings; idx++)
-                settings_iterator(all_settings[idx], add_setting2, settings);
+                ok = settings_iterator(all_settings[idx], add_setting2, settings);
 
             free(all_settings);
 
@@ -920,13 +921,17 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
             for(idx = 0; idx < details->n_settings; idx++) {
                 setting = &details->settings[idx];
                 if(setting->is_available == NULL || setting->is_available(setting))
-                    settings_iterator(setting, add_setting2, settings);
+                    ok = settings_iterator(setting, add_setting2, settings);
             }
         } while((details = details->next));
     }
 
-    if(root)
-        json_write_response(root, file);
+    if(root) {
+        if(ok)
+            json_write_response(root, file);
+        else
+            cJSON_Delete(root);
+    }
 
     return Status_OK;
 }
@@ -1016,8 +1021,8 @@ static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_
                 if((ok = !!(ap = cJSON_CreateObject())))
                 {
                     ok = !!cJSON_AddStringToObject(ap, "SSID", (char *)ap_list->ap_records[i].ssid);
-                    ok &= !!cJSON_AddNumberToObject(ap, "SIGNAL", (double)ap_list->ap_records[i].rssi);
-                    ok &= !!cJSON_AddStringToObject(ap, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
+                    ok = ok & !!cJSON_AddNumberToObject(ap, "SIGNAL", (double)ap_list->ap_records[i].rssi);
+                    ok = ok & !!cJSON_AddStringToObject(ap, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
                     if(ok)
                         cJSON_AddItemToArray(data, ap);
                 }
@@ -1057,78 +1062,78 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
         if((ok = !!(root = json_create_response_hdr(command_id, true, true, &data, NULL)))) {
 
             if(hal.get_free_mem)
-                ok &= json_add_value(data, "free mem", btoa(hal.get_free_mem()));
+                ok = ok & json_add_value(data, "free mem", btoa(hal.get_free_mem()));
 
-//            ok &= json_add_value(data, "chip id", "0");
-            ok &= json_add_value(data, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
+//            ok = ok & json_add_value(data, "chip id", "0");
+            ok = ok & json_add_value(data, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
 
             if(mount) {
 
-                ok &= json_add_value(data, "FS type", "SD");
+                ok = ok & json_add_value(data, "FS type", "SD");
 
                 strcpy(buf, btoa(mount->size));
                 strcat(buf, "/");
                 strcat(buf, btoa(mount->used));
-                ok &= json_add_value(data, "FS usage", buf);
+                ok = ok & json_add_value(data, "FS usage", buf);
             }
 
 #if WIFI_ENABLE
-            ok &= json_add_value(data, "wifi", "ON");
+            ok = ok & json_add_value(data, "wifi", "ON");
 #elif ETHERNET_ENABLE
-            ok &= json_add_value(data, "wifi", "OFF");
-            ok &= json_add_value(data, "ethernet", "ON");
+            ok = ok & json_add_value(data, "wifi", "OFF");
+            ok = ok & json_add_value(data, "ethernet", "ON");
 #endif
             if(network->status.services.http)
-                ok &= json_add_value(data, "HTTP port", uitoa(network->status.http_port));
+                ok = ok & json_add_value(data, "HTTP port", uitoa(network->status.http_port));
             if(network->status.services.telnet)
-                ok &= json_add_value(data, "Telnet port", uitoa(network->status.telnet_port));
+                ok = ok & json_add_value(data, "Telnet port", uitoa(network->status.telnet_port));
             if(network->status.services.webdav)
-                ok &= json_add_value(data, "WebDav port", uitoa(network->status.http_port));
+                ok = ok & json_add_value(data, "WebDav port", uitoa(network->status.http_port));
             if(network->status.services.ftp) {
                 strappend(buf, 3, uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port));
-                ok &= json_add_value(data, "Ftp ports", buf);
+                ok = ok & json_add_value(data, "Ftp ports", buf);
             }
             if(network->status.services.websocket)
-                ok &= json_add_value(data, "Websocket port", uitoa(network->status.websocket_port));
+                ok = ok & json_add_value(data, "Websocket port", uitoa(network->status.websocket_port));
 
             if(network->is_ethernet) {
 
                 if(*network->mac != '\0')
-                    ok &= json_add_value(data, "ethernet", network->mac);
+                    ok = ok & json_add_value(data, "ethernet", network->mac);
 
                 if(network->link_up)
                     strappend(buf, 3, "connected (", uitoa(network->mbps), "Mbps)");
                 else
                     strcpy(buf, "disconnected");
-                ok &= json_add_value(data, "cable", buf);
+                ok = ok & json_add_value(data, "cable", buf);
 
-                ok &= json_add_value(data, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
-                ok &= json_add_value(data, "ip", network->status.ip);
+                ok = ok & json_add_value(data, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
+                ok = ok & json_add_value(data, "ip", network->status.ip);
 
                 if(*network->status.gateway != '\0')
-                    ok &= json_add_value(data, "gw", network->status.gateway);
+                    ok = ok & json_add_value(data, "gw", network->status.gateway);
 
                 if(*network->status.mask != '\0')
-                    ok &= json_add_value(data, "msk", network->status.mask);
+                    ok = ok & json_add_value(data, "msk", network->status.mask);
 
                 if(network->status.services.dns)
-                    ok &= json_add_value(data, "DNS", network->status.gateway);
+                    ok = ok & json_add_value(data, "DNS", network->status.gateway);
             }
 
 #if WEBUI_AUTH_ENABLE
-            ok &= json_add_value(data, "authentication", "ON");
+            ok = ok & json_add_value(data, "authentication", "ON");
 #endif
-//            ok &= json_add_value(data, "flash", "OFF");
+//            ok = ok & json_add_value(data, "flash", "OFF");
             if(sdfs)
                 strappend(buf, 3, "direct (", sdfs->name, ")");
             else
                 strcpy(buf, "none");
-            ok &= json_add_value(data, "sd", buf);
+            ok = ok & json_add_value(data, "sd", buf);
 
-            ok &= json_add_value(data, "targetfw", FIRMWARE_TARGET);
+            ok = ok & json_add_value(data, "targetfw", FIRMWARE_TARGET);
             strappend(buf, 3, GRBL_VERSION, "-", uitoa(GRBL_BUILD));
-            ok &= json_add_value(data, "FW ver", buf);
-            ok &= json_add_value(data, "FW arch", hal.info);
+            ok = ok & json_add_value(data, "FW ver", buf);
+            ok = ok & json_add_value(data, "FW arch", hal.info);
 
             json_write_response(root, file);
         }
@@ -1262,8 +1267,8 @@ static status_code_t fs_list_files (const struct webui_cmd_binding *command, uin
             cJSON *data;
 
             if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
-                ok &= !!cJSON_AddStringToObject(data, "path", get_path(path, arg ? arg : "/", drive));
-                ok &= fs_ls(data, path, NULL, drive);
+                ok = ok & !!cJSON_AddStringToObject(data, "path", get_path(path, arg ? arg : "/", drive));
+                ok = ok & fs_ls(data, path, NULL, drive);
             }
         }
     } else
@@ -1381,23 +1386,23 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
                 case 0:
                     if(job)
                         grbl.enqueue_realtime_command(CMD_FEED_HOLD);
-                    ok &= !!cJSON_AddStringToObject(data, "status", job ? "Stream paused" : "No stream to pause");
+                    ok = ok & !!cJSON_AddStringToObject(data, "status", job ? "Stream paused" : "No stream to pause");
                     break;
 
                 case 1:
                     if(job)
                         grbl.enqueue_realtime_command(CMD_CYCLE_START);
-                    ok &= !!cJSON_AddStringToObject(data, "status", job ? "Stream resumed" : "No stream to resume");
+                    ok = ok & !!cJSON_AddStringToObject(data, "status", job ? "Stream resumed" : "No stream to resume");
                     break;
 
                 case 2:
                     if(job)
                         grbl.enqueue_realtime_command(CMD_STOP);
-                    ok &= !!cJSON_AddStringToObject(data, "status", job ? "Stream aborted" : "No stream to abort");
+                    ok = ok & !!cJSON_AddStringToObject(data, "status", job ? "Stream aborted" : "No stream to abort");
                     break;
 
                 default:
-                    ok &= !!cJSON_AddStringToObject(data, "status", "Unknown action");
+                    ok = ok & !!cJSON_AddStringToObject(data, "status", "Unknown action");
                     break;
             }
 
@@ -1406,23 +1411,23 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
             switch(state_get()) {
 
                 case STATE_HOLD:
-                    ok &= !!cJSON_AddStringToObject(data, "status", "pause stream");
+                    ok = ok & !!cJSON_AddStringToObject(data, "status", "pause stream");
                     break;
 
                 default:
-                    ok &= !!cJSON_AddStringToObject(data, "status", "processing");
-                    ok &= !!cJSON_AddStringToObject(data, "total", uitoa(job->size));
-                    ok &= !!cJSON_AddStringToObject(data, "processed", uitoa(job->pos));
-                    ok &= !!cJSON_AddStringToObject(data, "type", "SD");
-                    ok &= !!cJSON_AddStringToObject(data, "name", job->name);
+                    ok = ok & !!cJSON_AddStringToObject(data, "status", "processing");
+                    ok = ok & !!cJSON_AddStringToObject(data, "total", uitoa(job->size));
+                    ok = ok & !!cJSON_AddStringToObject(data, "processed", uitoa(job->pos));
+                    ok = ok & !!cJSON_AddStringToObject(data, "type", "SD");
+                    ok = ok & !!cJSON_AddStringToObject(data, "name", job->name);
                     break;
             }
 
         } else {
 
-            ok &= !!cJSON_AddStringToObject(data, "status", "no stream");
+            ok = ok & !!cJSON_AddStringToObject(data, "status", "no stream");
             if(gc_state.last_error != Status_OK)
-                ok &= !!cJSON_AddStringToObject(data, "code", uitoa(gc_state.last_error));
+                ok = ok & !!cJSON_AddStringToObject(data, "code", uitoa(gc_state.last_error));
         }
     }
 
@@ -1537,41 +1542,41 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
 
         if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
 
-            ok &= !!cJSON_AddStringToObject(data, "FWVersion", GRBL_VERSION);
-            ok &= !!cJSON_AddStringToObject(data, "FWTarget", FIRMWARE_TARGET);
-            ok &= !!cJSON_AddStringToObject(data, "FWTargetID", FIRMWARE_ID);
-            ok &= !!cJSON_AddStringToObject(data, "Setup", "Enabled");
-            ok &= !!cJSON_AddStringToObject(data, "SDConnection", sdfs ? "direct" : "none");
-            ok &= !!cJSON_AddStringToObject(data, "SerialProtocol", "Socket");
+            ok = ok & !!cJSON_AddStringToObject(data, "FWVersion", GRBL_VERSION);
+            ok = ok & !!cJSON_AddStringToObject(data, "FWTarget", FIRMWARE_TARGET);
+            ok = ok & !!cJSON_AddStringToObject(data, "FWTargetID", FIRMWARE_ID);
+            ok = ok & !!cJSON_AddStringToObject(data, "Setup", "Enabled");
+            ok = ok & !!cJSON_AddStringToObject(data, "SDConnection", sdfs ? "direct" : "none");
+            ok = ok & !!cJSON_AddStringToObject(data, "SerialProtocol", "Socket");
 #if WEBUI_AUTH_ENABLE
-            ok &= !!cJSON_AddStringToObject(data, "Authentication", "Enabled");
+            ok = ok & !!cJSON_AddStringToObject(data, "Authentication", "Enabled");
 #else
-            ok &= !!cJSON_AddStringToObject(data, "Authentication", "Disabled");
+            ok = ok & !!cJSON_AddStringToObject(data, "Authentication", "Disabled");
 #endif
-            ok &= !!cJSON_AddStringToObject(data, "WebCommunication", "Synchronous");
-            ok &= !!cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip);
-            ok &= !!cJSON_AddStringToObject(data, "WebSocketSubProtocol", "webui-v3");
-            ok &= !!cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port));
-            ok &= !!cJSON_AddStringToObject(data, "Hostname", network->status.hostname);
+            ok = ok & !!cJSON_AddStringToObject(data, "WebCommunication", "Synchronous");
+            ok = ok & !!cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip);
+            ok = ok & !!cJSON_AddStringToObject(data, "WebSocketSubProtocol", "webui-v3");
+            ok = ok & !!cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port));
+            ok = ok & !!cJSON_AddStringToObject(data, "Hostname", network->status.hostname);
 #if WIFI_ENABLE
   #if WIFI_SOFTAP
-            ok &= !!cJSON_AddStringToObject(data, "WiFiMode", "AP");
+            ok = ok & !!cJSON_AddStringToObject(data, "WiFiMode", "AP");
   #else
-            ok &= !!cJSON_AddStringToObject(data, "WiFiMode", "STA");
+            ok = ok & !!cJSON_AddStringToObject(data, "WiFiMode", "STA");
   #endif
 #endif
-            ok &= !!cJSON_AddStringToObject(data, "FlashFileSystem", flashfs ? flashfs->name : "none");
-            ok &= !!cJSON_AddStringToObject(data, "HostPath", hostpath);
-            ok &= !!cJSON_AddStringToObject(data, "WebUpdate", /*flashfs || sdfs ? "Enabled" :*/ "Disabled");
-            ok &= !!cJSON_AddStringToObject(data, "FileSystem", flashfs ? "flash" : "none");
+            ok = ok & !!cJSON_AddStringToObject(data, "FlashFileSystem", flashfs ? flashfs->name : "none");
+            ok = ok & !!cJSON_AddStringToObject(data, "HostPath", hostpath);
+            ok = ok & !!cJSON_AddStringToObject(data, "WebUpdate", /*flashfs || sdfs ? "Enabled" :*/ "Disabled");
+            ok = ok & !!cJSON_AddStringToObject(data, "FileSystem", flashfs ? "flash" : "none");
 
             if(hal.rtc.get_datetime) {
                 struct tm time;
-                ok &= !!cJSON_AddStringToObject(data, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
+                ok = ok & !!cJSON_AddStringToObject(data, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
             } else
-                ok &= !!cJSON_AddStringToObject(data, "Time", "none");
+                ok = ok & !!cJSON_AddStringToObject(data, "Time", "none");
 
-            ok &= !!cJSON_AddStringToObject(data, "Axisletters", axisletters);
+            ok = ok & !!cJSON_AddStringToObject(data, "Axisletters", axisletters);
 
             json_write_response(root, file);
         }

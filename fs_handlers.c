@@ -5,23 +5,23 @@
 
   Part of grblHAL
 
-  Copyright (c) 2020-2023 Terje Io
+  Copyright (c) 2020-2024 Terje Io
 
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
 
-  Grbl is free software: you can redistribute it and/or modify
+  grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Grbl is distributed in the hope that it will be useful,
+  grblHAL is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+  along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifdef ARDUINO
@@ -64,15 +64,18 @@ static bool add_file (cJSON *files, char *path, vfs_dirent_t *file, time_t *mtim
         ok = !!cJSON_AddStringToObject(fileinfo, "name", file->name);
 #if WEBUI_ENABLE != 2
         if(mtime)
-            ok &= !!cJSON_AddStringToObject(fileinfo, "time", strtoisodt(gmtime(mtime)));
+            ok = ok & !!cJSON_AddStringToObject(fileinfo, "time", strtoisodt(gmtime(mtime)));
 #else
-        ok &= !!cJSON_AddStringToObject(fileinfo, "datetime", "");
-        ok &= !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
+        ok = ok & !!cJSON_AddStringToObject(fileinfo, "datetime", "");
+        ok = ok & !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
 #endif
         if(file->st_mode.directory)
-            ok &= !!cJSON_AddNumberToObject(fileinfo, "size", -1.0);
+            ok = ok & !!cJSON_AddNumberToObject(fileinfo, "size", -1.0);
         else
-            ok &= !!cJSON_AddStringToObject(fileinfo, "size", btoa(file->size));
+            ok = ok & !!cJSON_AddStringToObject(fileinfo, "size", btoa(file->size));
+
+        if(!ok)
+            cJSON_Delete(fileinfo);
     }
 
     return ok && cJSON_AddItemToArray(files, fileinfo);
@@ -88,7 +91,7 @@ static char *get_fullpath (char *path, char *filename)
 static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 {
     int res = 0;
-    bool subdirs = false;
+    bool scan = true, subdirs = false;
     vfs_dir_t *dir;
     vfs_dirent_t *dirent;
 #if WEBUI_ENABLE != 2
@@ -99,7 +102,7 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
         return vfs_errno;
 
    // Pass 1: Scan files
-    while(true) {
+    while(scan) {
 
         if((dirent = vfs_readdir(dir)) == NULL)
             break;
@@ -110,12 +113,12 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
 #if WEBUI_ENABLE != 2
             int res = vfs_stat(get_fullpath(path, dirent->name), &st);
   #if ESP_PLATFORM
-            add_file(files, path, dirent, res == 0 ? &st.st_mtim : NULL);
+            scan = add_file(files, path, dirent, res == 0 ? &st.st_mtim : NULL);
   #else
-            add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
+            scan = add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
   #endif
 #else
-            add_file(files, path, dirent, NULL);
+            scan = add_file(files, path, dirent, NULL);
 #endif
         }
     }
@@ -123,7 +126,7 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
     vfs_closedir(dir);
     dir = NULL;
 
-    if((subdirs = (subdirs && depth)))
+    if((subdirs = (scan && subdirs && depth)))
         subdirs = (dir = vfs_opendir(path)) != NULL;
 
     // Pass 2: Scan directories
@@ -137,7 +140,7 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
             size_t pathlen = strlen(path);
 //          if(pathlen + strlen(get_name(&fno)) > (MAX_PATHLEN - 1))
                 //break;
-            add_file(files, path, dirent, NULL);
+            subdirs = add_file(files, path, dirent, NULL);
             if(depth > 1) {
                 sprintf(&path[pathlen], "/%s", dirent->name);
                 if((res = sd_scan_dir(files, path, depth - 1)) != 0)
@@ -161,26 +164,26 @@ bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
     if((ok = (root && (files = cJSON_AddArrayToObject(root, "files"))))) {
 
         vfs_fixpath(path);
-        sd_scan_dir(files, path, 1);
 
-        cJSON_AddStringToObject(root, "path", path);
+        if((ok = sd_scan_dir(files, path, 1) == 0 && !!cJSON_AddStringToObject(root, "path", path))) {
 
-        vfs_free_t *mount;
+            vfs_free_t *mount;
 
-        if(drive)
-            mount = vfs_drive_getfree(drive);
-        else
-            mount = vfs_fgetfree(path);
+            if(drive)
+                mount = vfs_drive_getfree(drive);
+            else
+                mount = vfs_fgetfree(path);
 
-        if(mount) {
-            uint32_t pct_used = (mount->used * 100) / mount->size;
-            ok &= !!cJSON_AddStringToObject(root, "total", btoa(mount->size));
-            ok &= !!cJSON_AddStringToObject(root, "used", btoa(mount->used));
-            ok &= !!cJSON_AddStringToObject(root, "occupation", uitoa(pct_used == 0 ? 1 : pct_used));
-        }
-        if(status) {
-            ok &= !!cJSON_AddStringToObject(root, "mode", "direct");
-            ok &= !!cJSON_AddStringToObject(root, "status", status);
+            if(mount) {
+                uint32_t pct_used = (mount->used * 100) / mount->size;
+                ok = ok & !!cJSON_AddStringToObject(root, "total", btoa(mount->size));
+                ok = ok & !!cJSON_AddStringToObject(root, "used", btoa(mount->used));
+                ok = ok & !!cJSON_AddStringToObject(root, "occupation", uitoa(pct_used == 0 ? 1 : pct_used));
+            }
+            if(status) {
+                ok = ok & !!cJSON_AddStringToObject(root, "mode", "direct");
+                ok = ok & !!cJSON_AddStringToObject(root, "status", status);
+            }
         }
     }
 
@@ -189,23 +192,24 @@ bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
 
 static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, vfs_drive_t *drive)
 {
-    bool ok;
+    bool ok = false;
     cJSON *root = cJSON_CreateObject();
 
-    if((ok = root && fs_ls(root, path, status, drive))) {
+    if(root && fs_ls(root, path, status, drive)) {
 
         char *resp = cJSON_PrintUnformatted(root);
 
-        data_is_json();
-
-        vfs_puts(resp, file);
-
-        free(resp);
+        if((ok = !!resp)) {
+            cJSON_Delete(root);
+            data_is_json();
+            vfs_puts(resp, file);
+            cJSON_free(resp);
+        }
 
         http_set_response_header(request, "Cache-Control", "no-cache");
     }
 
-    if(root)
+    if(root && !ok)
         cJSON_Delete(root);
 
     return ok;

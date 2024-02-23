@@ -10,18 +10,18 @@
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
 
-  Grbl is free software: you can redistribute it and/or modify
+  grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Grbl is distributed in the hope that it will be useful,
+  grblHAL is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+  along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifdef ARDUINO
@@ -56,7 +56,6 @@ typedef struct {
 
 static webui_settings_t webui;
 static nvs_address_t nvs_address;
-static on_execute_realtime_ptr on_execute_realtime;
 
 static void webui_settings_restore (void);
 static void webui_settings_load (void);
@@ -67,7 +66,7 @@ static const setting_detail_t webui_settings[] = {
     { Setting_UserPassword, Group_General, "User Password", NULL, Format_Password, "x(32)", "8", "32", Setting_NonCore, &webui.user_password, NULL, NULL, { .allow_null = On } },
 #endif
     { Setting_WebUiTimeout, Group_General, "WebUI timeout", "minutes", Format_Int16, "##0", NULL, "999", Setting_NonCore, &webui.session_timeout, NULL, NULL },
-    { Setting_WebUiAutoReportInterval, Group_General, "WebUI auto report interval", "milliseconds", Format_Int16, "###0", NULL, "9999", Setting_NonCore, &webui.report_interval, NULL, NULL, { .reboot_required = On } },
+    { Setting_WebUiAutoReportInterval, Group_General, "WebUI auto report interval", "milliseconds", Format_Int16, "###0", "100", "9999", Setting_NonCore, &webui.report_interval, NULL, NULL, { .allow_null = On, .reboot_required = On } },
 };
 
 #ifndef NO_SETTINGS_DESCRIPTIONS
@@ -112,25 +111,13 @@ static void webui_settings_restore (void)
     hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
 }
 
-static void webui_auto_report (sys_state_t state)
+static void webui_auto_report (void *data)
 {
-    static uint32_t ms = 0;
+    if(webui.report_interval)
+        task_add_delayed(webui_auto_report, NULL, webui.report_interval);
 
-    uint32_t t = hal.get_elapsed_ticks();
-
-    if(t - ms >= webui.report_interval) {
-        ms = t;
-        if(hal.stream.state.webui_connected)
-            protocol_enqueue_realtime_command(CMD_STATUS_REPORT);
-    }
-
-    on_execute_realtime(state);
-}
-
-static void start_auto_report (void *data)
-{
-    on_execute_realtime = grbl.on_execute_realtime;
-    grbl.on_execute_realtime = webui_auto_report;
+    if(hal.stream.state.webui_connected && !sys.flags.auto_reporting)
+        protocol_enqueue_realtime_command(CMD_STATUS_REPORT);
 }
 
 static void webui_settings_load (void)
@@ -139,7 +126,7 @@ static void webui_settings_load (void)
         webui_settings_restore();
 
     if(webui.report_interval)
-        protocol_enqueue_foreground_task(start_auto_report, NULL);
+        task_add_delayed(webui_auto_report, NULL, webui.report_interval);
 }
 
 #if WEBUI_AUTH_ENABLE

@@ -5,20 +5,20 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2023 Terje Io
+  Copyright (c) 2019-2024 Terje Io
 
-  Grbl is free software: you can redistribute it and/or modify
+  grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Grbl is distributed in the hope that it will be useful,
+  grblHAL is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+  along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifdef ARDUINO
@@ -336,14 +336,14 @@ static const char *command (http_request_t *request)
                 is_v3 = cmdv == 701;
 
             if(is_v3)
-                ok &= (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+                ok = ok & (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
             else
-                ok &= (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+                ok = ok & (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
 
 #elif WEBUI_ENABLE == 2
-            ok &= (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+            ok = ok & (status = webui_v2_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
 #else
-            ok &= (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
+            ok = ok & (status = webui_v3_command_handler(cmdv, argc, argv, get_auth_level(request), file)) == Status_OK;
 #endif
 
 #if WEBUI_AUTH_ENABLE
@@ -471,7 +471,7 @@ static const char *wifi_scan_handler (http_request_t *request)
             cJSON *ap, *aps;
 
             ok = cJSON_AddStringToObject(root, "ap", ap_list->ap_selected ? (char *)ap_list->ap_selected : "") != NULL;
-            ok &= cJSON_AddStringToObject(root, "status", ap_list->ap_status) != NULL;
+            ok = ok & cJSON_AddStringToObject(root, "status", ap_list->ap_status) != NULL;
 
             if(ap_list->ap_selected)
                 cJSON_AddStringToObject(root, "ip", ip4addr_ntoa(&ap_list->ip_addr));
@@ -482,9 +482,9 @@ static const char *wifi_scan_handler (http_request_t *request)
                     if((ok = (ap = cJSON_CreateObject()) != NULL))
                     {
                         ok = cJSON_AddStringToObject(ap, "ssid", (char *)ap_list->ap_records[i].ssid) != NULL;
-                        ok &= cJSON_AddStringToObject(ap, "security", wifi_get_authmode_name(ap_list->ap_records[i].authmode)) != NULL;
-                        ok &= cJSON_AddNumberToObject(ap, "primary", (double)ap_list->ap_records[i].primary) != NULL;
-                        ok &= cJSON_AddNumberToObject(ap, "rssi",  (double)ap_list->ap_records[i].rssi) != NULL;
+                        ok = ok & cJSON_AddStringToObject(ap, "security", wifi_get_authmode_name(ap_list->ap_records[i].authmode)) != NULL;
+                        ok = ok & cJSON_AddNumberToObject(ap, "primary", (double)ap_list->ap_records[i].primary) != NULL;
+                        ok = ok & cJSON_AddNumberToObject(ap, "rssi",  (double)ap_list->ap_records[i].rssi) != NULL;
                         if(ok)
                             cJSON_AddItemToArray(aps, ap);
                     }
@@ -676,7 +676,7 @@ static const char *login_handler_get (http_request_t *request)
     if((root = cJSON_CreateObject())) {
 
         ok = cJSON_AddStringToObject(root, "status", "ok") != NULL;
-        ok &= cJSON_AddStringToObject(root, "authentication_lvl", "admin") != NULL;
+        ok = ok & cJSON_AddStringToObject(root, "authentication_lvl", "admin") != NULL;
 
         if(ok) {
             char *resp = cJSON_PrintUnformatted(root);
