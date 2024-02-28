@@ -768,26 +768,37 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
             case Format_XBitfield:
             case Format_RadioButtons:
                 {
-                    cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
-                    if(bit == -1) {
-                        uint32_t i, j = strnumentries(setting->format, ',');
-                        for(i = 0; i < j; i++) {
-                            option = cJSON_CreateObject();
-                      //      if(isv3 && i == 0)
-                      //          cJSON_AddStringToObject(option, strgetentry(opt, setting->format, i, ','), uitoa(1 << bit));
-                      //      else
-                            if(strcmp(strgetentry(opt, setting->format, i, ','), "N/A")) {
-                                cJSON_AddStringToObject(option, opt, uitoa(i));
-                                cJSON_AddItemToArray(options, option);
+                    cJSON *option, *options;
+
+                    if((ok = !!(options = cJSON_AddArrayToObject(settingobj, "O")))) {
+                        if(bit == -1) {
+                            uint_fast16_t i, j = strnumentries(setting->format, ',');
+                            for(i = 0; ok && i < j; i++) {
+                          //      option = cJSON_CreateObject();
+                          //      if(isv3 && i == 0)
+                          //          cJSON_AddStringToObject(option, strgetentry(opt, setting->format, i, ','), uitoa(1 << bit));
+                          //      else
+                                if(strcmp(strgetentry(opt, setting->format, i, ','), "N/A")) {
+                                    if((ok = !!(option = cJSON_CreateObject()))) {
+                                        ok = !!cJSON_AddStringToObject(option, opt, uitoa(i));
+                                        if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
+                                            cJSON_Delete(option);
+                                    }
+                                }
+                            }
+                        } else if((ok = !!(option = cJSON_CreateObject()))) {
+                            ok = !!cJSON_AddStringToObject(option, "Enabled", "1");
+                            if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
+                                cJSON_Delete(option);
+                            else {
+                                ok = ok & !!(option = cJSON_CreateObject());
+                                ok = ok & !!cJSON_AddStringToObject(option, "Disabled", "0");
+                                if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
+                                    cJSON_Delete(option);
                             }
                         }
-                    } else {
-                        option = cJSON_CreateObject();
-                        cJSON_AddStringToObject(option, "Enabled", "1");
-                        cJSON_AddItemToArray(options, option);
-                        option = cJSON_CreateObject();
-                        cJSON_AddStringToObject(option, "Disabled", "0");
-                        cJSON_AddItemToArray(options, option);
+                        if(!ok)
+                            cJSON_Delete(options);
                     }
                 }
                 break;
@@ -795,11 +806,18 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
             case Format_AxisMask:
                 {
                     uint_fast16_t i;
-                    cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
-                    for(i = 0; i < N_AXIS; i++) {
-                        option = cJSON_CreateObject();
-                        cJSON_AddStringToObject(option, axis_letter[i], uitoa(i));
-                        cJSON_AddItemToArray(options, option);
+                    cJSON *option, *options;
+
+                    if((ok = !!(options = cJSON_AddArrayToObject(settingobj, "O")))) {
+                        for(i = 0; ok && i < N_AXIS; i++) {
+                            if((ok = !!(option = cJSON_CreateObject()))) {
+                                ok = ok & !!cJSON_AddStringToObject(option, axis_letter[i], uitoa(i));
+                                if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
+                                    cJSON_Delete(option);
+                            }
+                        }
+                        if(!ok)
+                            cJSON_Delete(options);
                     }
                 }
                 break;
@@ -852,9 +870,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
                 break;
         }
 
-        if(ok)
-            cJSON_AddItemToArray(settings, settingobj);
-        else
+        if(!(ok = ok && !!cJSON_AddItemToArray(settings, settingobj)))
             cJSON_Delete(settingobj);
     }
 
@@ -912,13 +928,13 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 
             qsort(all_settings, n_settings, sizeof(setting_detail_t *), cmp_settings);
 
-            for(idx = 0; idx < n_settings; idx++)
+            for(idx = 0; ok && idx < n_settings; idx++)
                 ok = settings_iterator(all_settings[idx], add_setting2, settings);
 
             free(all_settings);
 
         } else do {
-            for(idx = 0; idx < details->n_settings; idx++) {
+            for(idx = 0; ok && idx < details->n_settings; idx++) {
                 setting = &details->settings[idx];
                 if(setting->is_available == NULL || setting->is_available(setting))
                     ok = settings_iterator(setting, add_setting2, settings);
