@@ -725,7 +725,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
 
         char opt[50], name[50], *q;
         uint_fast8_t suboffset = setting->flags.subgroups ? offset / setting->flags.increment : offset;
-        const setting_group_detail_t *group = setting_get_group_details(setting->group + suboffset);
+        const setting_group_detail_t *group = setting_get_group_details(setting->group + (setting->flags.subgroups ? suboffset : 0));
 
         if(setting->datatype == Format_Bool)
             bit = 0;
