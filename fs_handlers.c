@@ -375,7 +375,7 @@ static void fs_post_finished (http_request_t *request, char *response_uri, u16_t
 
     if(upload) {
 
-        strncpy(response_uri, upload->path ? upload->path : "/", response_uri_len);
+        strncpy(response_uri, *upload->path ? upload->path : "/", response_uri_len);
 
         char *s;
         if((s = strrchr(upload->filename, '/')))
