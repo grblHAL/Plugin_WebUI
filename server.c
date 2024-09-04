@@ -71,6 +71,7 @@
 #endif
 
 #include "grbl/vfs.h"
+#include "grbl/task.h"
 
 typedef struct {
     websocket_t *websocket;
@@ -175,6 +176,15 @@ static char *websocket_protocol_select (websocket_t *websocket, char *protocols,
 
     return is_v3 ? "webui-v3" : (on_protocol_select ? on_protocol_select(websocket, protocols, is_binary) : NULL);
 }
+
+#if N_AXIS > 3 && defined(ESP_PLATFORM)
+
+static void soft_reset (void *data)
+{
+    websocketd_RxPutC(CMD_RESET);
+}
+
+#endif
 
 static const char *command (http_request_t *request)
 {
@@ -367,10 +377,17 @@ static const char *command (http_request_t *request)
     if(*data == '\0')
         websocketd_RxPutC(ASCII_LF);
 
-    else if(*(data + 1) == '\0')
+    else if(*(data + 1) == '\0') {
+
+#if N_AXIS > 3 && defined(ESP_PLATFORM)
+        // Workaround for ESP32 panic on soft reset when > 3 axes enabled
+        if(*data == CMD_RESET)
+            task_add_delayed(soft_reset, NULL, 5);
+        else
+#endif
         websocketd_RxPutC(*data);
 
-    else {
+    } else {
 
         size_t len;
         char c, *block = strtok(data, "\n");
@@ -799,7 +816,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        hal.stream.write("[PLUGIN:WebUI v0.21]" ASCII_EOL);
+        report_plugin("WebUI", "0.22");
 }
 
 void webui_init (void)
