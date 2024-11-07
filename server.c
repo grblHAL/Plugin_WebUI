@@ -169,7 +169,7 @@ static char *websocket_protocol_select (websocket_t *websocket, char *protocols,
     if(network->status.services.http && (is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
         *is_binary = true;
          client.websocket = websocket;
-         websocket_set_stream_flags(websocket, (io_stream_state_t){ .connected = true, .webui_connected = true });
+         websocket_set_stream_flags(websocket, (io_stream_state_t){ .webui_connected = true });
          websocket_register_frame_handler(websocket, websocket_on_frame_received, false); // claim text frames
     } else
         client.websocket = NULL;
@@ -816,7 +816,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.22");
+        report_plugin("WebUI", "0.23");
 }
 
 void webui_init (void)
