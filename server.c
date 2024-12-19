@@ -72,6 +72,7 @@
 
 #include "grbl/vfs.h"
 #include "grbl/task.h"
+#include "grbl/stream_file.h"
 
 typedef struct {
     websocket_t *websocket;
@@ -337,7 +338,7 @@ static const char *command (http_request_t *request)
                 }
             }
 
-            if(cmdv != 701 || sdcard_busy())
+            if(cmdv != 701 || stream_is_file())
                 client.activity = hal.get_elapsed_ticks();
 
 #if WEBUI_ENABLE == 1
@@ -816,7 +817,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.23");
+        report_plugin("WebUI", "0.24");
 }
 
 void webui_init (void)
