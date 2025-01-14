@@ -721,7 +721,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
     bool ok;
     cJSON *settingobj = NULL;
 
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject()))) {
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting, offset)) && !!(settingobj = cJSON_CreateObject()))) {
 
         char opt[50], name[50], *q;
         uint_fast8_t suboffset = setting->flags.subgroups ? offset / setting->flags.increment : offset;
@@ -919,7 +919,7 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
             do {
                 for(idx = 0; idx < details->n_settings; idx++) {
                     setting = &details->settings[idx];
-                    if(setting->is_available == NULL || setting->is_available(setting)) {
+                    if(setting->is_available == NULL || setting->is_available(setting, 0)) {
                         *psetting++ = (setting_detail_t *)setting;
                         n_settings++;
                     }
@@ -936,7 +936,7 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
         } else do {
             for(idx = 0; ok && idx < details->n_settings; idx++) {
                 setting = &details->settings[idx];
-                if(setting->is_available == NULL || setting->is_available(setting))
+                if(setting->is_available == NULL || setting->is_available(setting, 0))
                     ok = settings_iterator(setting, add_setting2, settings);
             }
         } while((details = details->next));
