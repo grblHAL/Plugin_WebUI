@@ -390,7 +390,7 @@ static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fas
     cJSON *settingobj;
     const setting_detail_t *setting = setting_get_details(id, NULL);
 
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting)) && !!(settingobj = cJSON_CreateObject())))
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting, offset)) && !!(settingobj = cJSON_CreateObject())))
     {
         char opt[50];
         const setting_group_detail_t *group = setting_get_group_details(setting->group);
