@@ -218,7 +218,8 @@ static const char *command (http_request_t *request)
           http_get_param_value(request, "commandText", data, sizeof(data)) == NULL)
         http_get_param_value(request, "plain", data, sizeof(data));
 #endif
-
+    size_t datalen = strlen(data);
+    char *end_data = data + datalen;
     http_set_response_header(request, "Cache-Control", "no-cache");
 
     if(ping) {
@@ -389,24 +390,28 @@ static const char *command (http_request_t *request)
         websocketd_RxPutC(*data);
 
     } else {
-
-        size_t len;
-        char c, *block = strtok(data, "\n");
-
-        while(block) {
-
-            if((len = strlen(block)) == 2 && *block == 0xC2) {
-                block++;
-                len--;
+        if (datalen>0){
+            size_t len;
+            char *block = strtok(data, "\n");
+            while(block && block <= end_data) {
+                len = strlen(block);
+                if (len == 2 && (unsigned char)*block == 0xC2) {
+                    block++;
+                    len--;
+                }
+                size_t i;
+                for (i = 0; i < len; i++) {
+                    websocketd_RxPutC(block[i]);
+                }
+                
+                if (len > 1) {
+                    websocketd_RxPutC(ASCII_LF);
+                }
+                block = strtok(NULL, "\n");
+                if (block && block > end_data) {
+                    break;
+                }
             }
-
-            while((c = *block++))
-                websocketd_RxPutC(c);
-
-            if(len > 1)
-                websocketd_RxPutC(ASCII_LF);
-
-            block = strtok(NULL, "\n");
         }
     }
 
