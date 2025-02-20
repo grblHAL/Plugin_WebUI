@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2024 Terje Io
+  Copyright (c) 2019-2025 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -465,7 +465,7 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
 {
     char response[20];
 
-    vfs_puts(strappend(response, 3, argv[0], networking_get_info()->status.ip, WEBUI_EOL), file);
+    vfs_puts(strappend(response, 3, argv[0], networking.get_info(NULL)->status.ip, WEBUI_EOL), file);
 
     return Status_OK;
 }
@@ -685,7 +685,7 @@ static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_
 static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
     char buf[200];
-    network_info_t *network = networking_get_info();
+    network_info_t *network = networking.get_info(NULL);
 
     vfs_puts(strappend(buf, 3, "Processor: ", hal.info, WEBUI_EOL), file);
     if(hal.get_free_mem)
@@ -788,7 +788,7 @@ static status_code_t flash_get_capacity (const struct webui_cmd_binding *command
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
     char buf[200];
-    network_info_t *network = networking_get_info();
+    network_info_t *network = networking.get_info(NULL);
 
     strcpy(buf, "FW version:");
     strcat(buf, GRBL_VERSION);

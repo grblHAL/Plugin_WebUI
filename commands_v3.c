@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2024 Terje Io
+  Copyright (c) 2019-2025 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -494,9 +494,9 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
     char response[20];
 
     if(json)
-        json_write_response(json_create_response_hdr(command->id, false, true, NULL, networking_get_info()->status.ip), file);
+        json_write_response(json_create_response_hdr(command->id, false, true, NULL, networking.get_info(NULL)->status.ip), file);
     else
-        vfs_puts(strappend(response, 3, argv[0], networking_get_info()->status.ip, WEBUI_EOL), file);
+        vfs_puts(strappend(response, 3, argv[0], networking.get_info(NULL)->status.ip, WEBUI_EOL), file);
 
     return Status_OK;
 }
@@ -1066,7 +1066,7 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
     char buf[200];
     vfs_free_t *mount;
     vfs_drive_t *sdfs = fs_get_sd_drive(); //, *flashfs = fs_get_flash_drive();
-    network_info_t *network = networking_get_info();
+    network_info_t *network = networking.get_info(NULL);
 
     mount = sdfs ? vfs_drive_getfree(sdfs) : NULL;
 
@@ -1538,7 +1538,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
 {
     uint_fast16_t idx;
     char buf[200], hostpath[16], axisletters[10];
-    network_info_t *network = networking_get_info();
+    network_info_t *network = networking.get_info(NULL);
     vfs_drive_t *sdfs = fs_get_sd_drive(), *flashfs = fs_get_flash_drive(webui_maintenance_mode());
 
     strcpy(hostpath, webui_get_sys_path());

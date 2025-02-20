@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2024 Terje Io
+  Copyright (c) 2019-2025 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -165,7 +165,7 @@ void websocket_on_frame_received (websocket_t *websocket, void *data, size_t siz
 
 static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
 {
-    network_info_t *network = networking_get_info();
+    network_info_t *network = networking.get_info(NULL);
 
     if(network->status.services.http && (is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
         *is_binary = true;
@@ -438,7 +438,7 @@ static const char *redirect_html_get_handler(http_request_t *request, char *loca
 
 static const char *get_handler (http_request_t *request)
 {
-    network_info_t *network = networking_get_info();
+    network_info_t *network = networking.get_info(NULL);
 
     if(network->status.services.dns) { // captive portal, redirect requests to ourself...
 
@@ -817,7 +817,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.24");
+        report_plugin("WebUI", "0.25");
 }
 
 void webui_init (void)
