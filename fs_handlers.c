@@ -24,11 +24,7 @@
   along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef ARDUINO
-#include "../driver.h"
-#else
 #include "driver.h"
-#endif
 
 #if WEBUI_ENABLE
 
@@ -40,10 +36,10 @@
 #include "../networking/httpd.h"
 #include "../networking/http_upload.h"
 #include "../networking/utils.h"
-#include "../networking/strutils.h"
 #include "../networking/cJSON.h"
 
 #include "grbl/vfs.h"
+#include "grbl/strutils.h"
 
 static bool file_is_json = false;
 

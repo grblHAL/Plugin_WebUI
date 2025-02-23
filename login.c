@@ -24,11 +24,7 @@
   along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef ARDUINO
-#include "../driver.h"
-#else
 #include "driver.h"
-#endif
 
 #if WEBUI_ENABLE
 
@@ -37,13 +33,13 @@
 #include <stdio.h>
 
 #include "grbl/vfs.h"
+#include "grbl/strutils.h"
 #include "grbl/nvs_buffer.h"
 #include "grbl/protocol.h"
 
 #include "../networking/cJSON.h"
 #include "../networking/multipartparser.h"
 #include "../networking/utils.h"
-#include "../networking/strutils.h"
 
 #include "./login.h"
 

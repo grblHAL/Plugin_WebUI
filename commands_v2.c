@@ -33,7 +33,6 @@
 
 #include "../networking/networking.h"
 #include "../networking/utils.h"
-#include "../networking/strutils.h"
 #include "../networking/cJSON.h"
 
 #include "args.h"
@@ -42,6 +41,7 @@
 #include "grbl/vfs.h"
 #include "grbl/report.h"
 #include "grbl/state_machine.h"
+#include "grbl/strutils.h"
 
 #if SDCARD_ENABLE
 #include "sdcard/sdcard.h"

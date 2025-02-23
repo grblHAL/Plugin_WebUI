@@ -21,11 +21,7 @@
   along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifdef ARDUINO
-#include "../driver.h"
-#else
 #include "driver.h"
-#endif
 
 #if WEBUI_ENABLE
 
@@ -37,7 +33,6 @@
 #include "../networking/websocketd.h"
 #include "../networking/networking.h"
 #include "../networking/utils.h"
-#include "../networking/strutils.h"
 #include "../networking/cJSON.h"
 #include "../networking/http_upload.h"
 #include "../networking/fs_ram.h"
@@ -72,6 +67,7 @@
 
 #include "grbl/vfs.h"
 #include "grbl/task.h"
+#include "grbl/strutils.h"
 #include "grbl/stream_file.h"
 
 typedef struct {
