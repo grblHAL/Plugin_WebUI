@@ -33,10 +33,12 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "../networking/httpd.h"
-#include "../networking/http_upload.h"
-#include "../networking/utils.h"
-#include "../networking/cJSON.h"
+#include "webui.h"
+
+#include "networking/httpd.h"
+#include "networking/http_upload.h"
+#include "networking/utils.h"
+#include "networking/cJSON.h"
 
 #include "grbl/vfs.h"
 #include "grbl/strutils.h"
@@ -108,14 +110,16 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
         if(!dirent->st_mode.directory) {
 #if WEBUI_ENABLE != 2
             int res = vfs_stat(get_fullpath(path, dirent->name), &st);
+            if(!st.st_mode.hidden || webui_maintenance_mode()) {
   #if ESP_PLATFORM
-            scan = add_file(files, path, dirent, res == 0 ? &st.st_mtim : NULL);
+            	scan = add_file(files, path, dirent, res == 0 ? &st.st_mtim : NULL);
   #else
-            scan = add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
+            	scan = add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
   #endif
 #else
-            scan = add_file(files, path, dirent, NULL);
+            	scan = add_file(files, path, dirent, NULL);
 #endif
+            }
         }
     }
 
@@ -372,6 +376,9 @@ static void fs_post_finished (http_request_t *request, char *response_uri, u16_t
     if(upload) {
 
         strncpy(response_uri, *upload->path ? upload->path : "/", response_uri_len);
+
+        if(webui_maintenance_mode())
+            vfs_chmod(upload->filename, (vfs_st_mode_t){ .hidden = On }, (vfs_st_mode_t){ .hidden = On });
 
         char *s;
         if((s = strrchr(upload->filename, '/')))

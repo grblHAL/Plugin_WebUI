@@ -37,9 +37,9 @@
 #include "grbl/nvs_buffer.h"
 #include "grbl/protocol.h"
 
-#include "../networking/cJSON.h"
-#include "../networking/multipartparser.h"
-#include "../networking/utils.h"
+#include "networking/cJSON.h"
+#include "networking/multipartparser.h"
+#include "networking/utils.h"
 
 #include "./login.h"
 

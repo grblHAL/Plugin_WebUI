@@ -31,9 +31,9 @@
 #include <string.h>
 #include <math.h>
 
-#include "../networking/networking.h"
-#include "../networking/utils.h"
-#include "../networking/cJSON.h"
+#include "networking/networking.h"
+#include "networking/utils.h"
+#include "networking/cJSON.h"
 
 #include "args.h"
 #include "webui.h"
@@ -43,7 +43,7 @@
 #include "grbl/state_machine.h"
 #include "grbl/strutils.h"
 
-#if SDCARD_ENABLE
+#if FS_ENABLE & FS_SDCARD
 #include "sdcard/sdcard.h"
 //#include "esp_vfs_fat.h"
 #endif
@@ -91,7 +91,7 @@ static status_code_t get_system_status (const struct webui_cmd_binding *command,
 static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
 static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
 static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-#if SDCARD_ENABLE
+#if FS_ENABLE & FS_SDCARD
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
 static status_code_t get_sd_content (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
 static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
@@ -145,7 +145,7 @@ static const webui_cmd_binding_t webui_commands[] = {
   #endif
 #endif
 // Action commands
-#if SDCARD_ENABLE
+#if FS_ENABLE & FS_SDCARD
     { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
     { 210, get_sd_content,     { WebUIAuth_User, WebUIAuth_Admin},  "??" },
     { 220, sd_print,           { WebUIAuth_User, WebUIAuth_Admin},  "??" },
@@ -470,7 +470,7 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
     return Status_OK;
 }
 
-#if SDCARD_ENABLE
+#if FS_ENABLE & FS_SDCARD
 
 // ESP200
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
@@ -793,7 +793,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     strcpy(buf, "FW version:");
     strcat(buf, GRBL_VERSION);
     strcat(buf, " # FW target:grbl-embedded # FW HW:");
-#if SDCARD_ENABLE
+#if FS_ENABLE & FS_SDCARD
     strcat(buf, "Direct SD");
 #else
     strcat(buf, "No SD");

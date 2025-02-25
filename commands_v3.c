@@ -31,9 +31,9 @@
 #include <string.h>
 #include <math.h>
 
-#include "../networking/networking.h"
-#include "../networking/utils.h"
-#include "../networking/cJSON.h"
+#include "networking/networking.h"
+#include "networking/utils.h"
+#include "networking/cJSON.h"
 
 #include "args.h"
 #include "webui.h"
@@ -46,6 +46,7 @@
 #include "grbl/motion_control.h"
 
 #include "sdcard/sdcard.h"
+#include "sdcard/fs_stream.h"
 
 #if WIFI_ENABLE
 #include "wifi.h"
@@ -638,6 +639,7 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
 // ESP200
 static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
+#if FS_ENABLE & FS_SDCARD
     char *msg;
 
     if(argc == 1) {
@@ -653,6 +655,9 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
 
     } else
         msg = hal.stream.type == StreamType_SDCard ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
+#else
+    char *msg = "Not available";
+#endif
 
     if(json)
         json_write_response(json_create_response_hdr(command->id, false, true, NULL, msg), file);
@@ -1389,7 +1394,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
 static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
-    sdcard_job_t *job = sdcard_get_job_info();
+    stream_job_t *job = stream_get_job_info();
     cJSON *root, *data;
     char *action = webui_get_arg(argc, argv, "action=");
 

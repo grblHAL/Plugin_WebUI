@@ -10,25 +10,24 @@
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
 
-  Grbl is free software: you can redistribute it and/or modify
+  grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Grbl is distributed in the hope that it will be useful,
+  grblHAL is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+  along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef __WEBUI_LOGIN_H__
-#define __WEBUI_LOGIN_H__
+#pragma once
 
-#include "../grbl/plugins.h"
-#include "../networking/httpd.h"
+#include "grbl/plugins.h"
+#include "networking/httpd.h"
 
 #include "webui.h"
 
@@ -70,4 +69,3 @@ const char *login_handler_post (http_request_t *request);
 uint32_t login_get_timeout_period (void);
 #endif
 
-#endif

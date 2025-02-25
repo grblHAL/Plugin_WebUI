@@ -30,24 +30,24 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "../networking/websocketd.h"
-#include "../networking/networking.h"
-#include "../networking/utils.h"
-#include "../networking/cJSON.h"
-#include "../networking/http_upload.h"
-#include "../networking/fs_ram.h"
-#include "../networking/fs_stream.h"
+#include "networking/websocketd.h"
+#include "networking/networking.h"
+#include "networking/utils.h"
+#include "networking/cJSON.h"
+#include "networking/http_upload.h"
+#include "networking/fs_ram.h"
+#include "networking/fs_stream.h"
 #if SSDP_ENABLE
-#include "../networking/ssdp.h"
+#include "networking/ssdp.h"
 #endif
 
 #if WIFI_ENABLE && WIFI_SOFTAP
 #include "wifi.h"
 #endif
 
-#if SDCARD_ENABLE
+#if FS_ENABLE & FS_SDCARD
 #include "sdfs.h"
-#include "../sdcard/sdcard.h"
+#include "sdcard/sdcard.h"
 #endif
 
 #include "flashfs.h"
@@ -79,7 +79,6 @@ typedef struct {
 static bool file_is_json = false, is_v3 = false, maintenance_mode = false;
 static char sys_path[32] = ""; // Directory where index.html.gz was found
 static webui_client_t client;
-static driver_setup_ptr driver_setup;
 static on_report_options_ptr on_report_options;
 
 static websocket_on_client_connect_ptr on_client_connect;
@@ -670,6 +669,10 @@ bool is_authorized (http_request_t *req, webui_auth_level_t min_level, vfs_file_
 
 #endif
 
+#if FS_ENABLE & FS_SDCARD
+
+static driver_setup_ptr driver_setup;
+
 static bool webui_setup (settings_t *settings)
 {
     bool ok;
@@ -679,6 +682,8 @@ static bool webui_setup (settings_t *settings)
 
     return ok;
 }
+
+#endif
 
 #if !WEBUI_AUTH_ENABLE
 
@@ -813,15 +818,17 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.25");
+        report_plugin("WebUI", "0.26");
 }
 
 void webui_init (void)
 {
     login_init(); // handles WebUI settings so always call!
 
+#if FS_ENABLE & FS_SDCARD
     driver_setup = hal.driver_setup;
     hal.driver_setup = webui_setup;
+#endif
 
     on_report_options = grbl.on_report_options;
     grbl.on_report_options = webui_options;
@@ -841,7 +848,7 @@ void webui_init (void)
 
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
-  #if SDCARD_ENABLE
+  #if FS_ENABLE & FS_SDCARD
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
         { .uri = "/SD/*",     .method = HTTP_Get,     .handler = sdcard_download_handler }, // v2
@@ -875,7 +882,7 @@ void webui_init (void)
 
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
-  #if SDCARD_ENABLE
+  #if FS_ENABLE & FS_SDCARD
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
         { .uri = "/SD/*",     .method = HTTP_Get,     .handler = sdcard_download_handler }, // v2
@@ -908,7 +915,7 @@ void webui_init (void)
 
     static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
-  #if SDCARD_ENABLE
+  #if FS_ENABLE & FS_SDCARD
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
         { .uri = "/sd/*",     .method = HTTP_Get,     .handler = sdcard_download_handler },
         { .uri = "/upload",   .method = HTTP_Post,    .handler = sdcard_upload_handler },
