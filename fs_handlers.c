@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2020-2024 Terje Io
+  Copyright (c) 2020-2025 Terje Io
 
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
@@ -116,10 +116,10 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
   #else
             	scan = add_file(files, path, dirent, res == 0 ? &st.st_mtime : NULL);
   #endif
-#else
-            	scan = add_file(files, path, dirent, NULL);
-#endif
             }
+#else
+            scan = add_file(files, path, dirent, NULL);
+#endif
         }
     }
 
