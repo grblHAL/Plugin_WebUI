@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2019-2022 Terje Io
+  Copyright (c) 2019-2025 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -38,3 +38,4 @@ typedef char user_id_t[17];
 // implemented in server.c
 char *webui_get_sys_path (void);
 bool webui_maintenance_mode (void);
+network_info_t *webui_get_server_info (void);

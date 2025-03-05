@@ -109,6 +109,26 @@ static webui_auth_level_t get_auth_level (http_request_t *req)
 
 #endif
 
+static bool get_server_info (network_info_t *info, network_flags_t flags, void *data)
+{
+    bool ok;
+
+    // TODO: check against own IP?
+    if((ok = flags.interface_up && info->status.services.http))
+        memcpy(data, info, sizeof(network_info_t));
+
+    return ok;
+}
+
+network_info_t *webui_get_server_info (void)
+{
+    static network_info_t info;
+
+    networking_enumerate_interfaces(get_server_info, &info);
+
+    return &info;
+}
+
 void websocket_client_connect (websocket_t *websocket)
 {
     char buf[24];
@@ -160,7 +180,7 @@ void websocket_on_frame_received (websocket_t *websocket, void *data, size_t siz
 
 static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
 {
-    network_info_t *network = networking.get_info(NULL);
+    network_info_t *network = webui_get_server_info();
 
     if(network->status.services.http && (is_v3 = strlookup(protocols, "webui-v3", ',') >= 0)) {
         *is_binary = true;
@@ -433,7 +453,7 @@ static const char *redirect_html_get_handler(http_request_t *request, char *loca
 
 static const char *get_handler (http_request_t *request)
 {
-    network_info_t *network = networking.get_info(NULL);
+    network_info_t *network = webui_get_server_info();
 
     if(network->status.services.dns) { // captive portal, redirect requests to ourself...
 
@@ -818,7 +838,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.26");
+        report_plugin("WebUI", "0.27");
 }
 
 void webui_init (void)
