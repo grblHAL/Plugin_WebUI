@@ -33,7 +33,6 @@
 
 #include "networking/networking.h"
 #include "networking/utils.h"
-#include "networking/cJSON.h"
 
 #include "args.h"
 #include "webui.h"
@@ -44,6 +43,7 @@
 #include "grbl/strutils.h"
 #include "grbl/state_machine.h"
 #include "grbl/motion_control.h"
+#include "grbl/stream_json.h"
 
 #include "sdcard/sdcard.h"
 #include "sdcard/fs_stream.h"
@@ -57,6 +57,7 @@
 #define WEBUI_EOL "\n"
 #define FIRMWARE_ID "80"
 #define FIRMWARE_TARGET "grblHAL"
+#define JSON_MAX_DEPTH 15
 
 extern void data_is_json (void);
 
@@ -78,267 +79,55 @@ typedef struct webui_cmd_binding {
     webui_setting_map_t setting;
 } webui_cmd_binding_t;
 
+typedef enum {
+   ResponseHdrType_MSG = 0,
+   ResponseHdrType_AddObject,
+   ResponseHdrType_AddArray
+} response_hdr_type_t;
+
 //typedef status_code_t (*webui_command_handler_ptr)(const webui_cmd_binding_t *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
 
-static cJSON *json_create_response_hdr (uint_fast16_t cmd, bool array, bool ok, cJSON **data, const char *msg);
-static bool json_write_response (cJSON *json, vfs_file_t *file);
-
 static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t get_set_time (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t global_fs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t global_fs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t flashfs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t flashfs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t sdcard_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t sdcard_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t sdcard_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-#if WIFI_ENABLE
-static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-#endif
-static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file);
-
-static const webui_cmd_binding_t webui_commands[] = {
-    { 0,   list_commands,      { WebUIAuth_Guest, WebUIAuth_None},  "(<command id>) - display this help" },
-// Settings commands
-#if WIFI_ENABLE
-    { 100, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set STA SSID", { Setting_WiFi_STA_SSID, -1 } },
-    { 101, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set STA password", { Setting_WiFi_STA_Password, -1 } },
-    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set STA IP mode", { Setting_IpMode, -1 } },
-    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set STA IP/Mask/GW", { 0, -1 } },
-    { 105, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set AP SSID", { Setting_WiFi_AP_SSID, -1 } },
-    { 106, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set AP password", { Setting_WiFi_AP_Password, -1 } },
-    { 107, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ipv4>) - display/set AP IP", { Setting_IpAddress2, -1 } },
-    { 108, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<channel>) - display/set AP channel", { Setting_Wifi_AP_Channel, -1 } },
-//  { 110, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "<BT|WIFI-STA|WIFI-AP|WIFI-SETUP|ETH-STA|OFF> - display/set radio state", { Setting_WifiMode, -1 } },
-#elif ETHERNET_ENABLE
-    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set Ethernet IP mode", { Setting_IpMode, -1 } },
-    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set Ethernet IP/Mask/GW", { 0, -1 } },
-#endif
-#if WIFI_ENABLE || ETHERNET_ENABLE
-    { 111, get_current_ip,     { WebUIAuth_Guest, WebUIAuth_Admin}, "- display current IP" },
-    { 112, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<hostname>) - display/set Hostname", { Setting_Hostname, -1 } },
-  #if HTTP_ENABLE
-    { 120, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set HTTP state", { Setting_NetworkServices, 2 } },
-    { 121, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set HTTP port", { Setting_HttpPort, -1 } },
-  #endif
-  #if TELNET_ENABLE
-    { 130, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set Telnet state", { Setting_NetworkServices, 0 } },
-    { 131, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set Telnet port", { Setting_TelnetPort, -1 } },
-  #endif
-    { 140, get_set_time,       { WebUIAuth_Guest, WebUIAuth_Admin}, "(json=yes) - sync/display/set time"},
-  #if WEBSOCKET_ENABLE
-    { 160, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set WebSocket state", { Setting_NetworkServices, 1 } },
-    { 161, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set WebSocket port", { Setting_WebSocketPort, -1 } },
-  #endif
-  #if FTP_ENABLE
-    { 180, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set FTP state", { Setting_NetworkServices, 3 } },
-    { 181, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set FTP port", { Setting_WebSocketPort, -1 } },
-  #endif
-#endif
-// Action commands
-    { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
-    { 220, show_pins,          { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<SNAP>) - show pins" },
-    { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
-    { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
-#if WIFI_ENABLE
-    { 410, get_ap_list,        { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display available AP list (limited to 30) in plain/JSON" },
-#endif
-    { 420, get_system_status,  { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display ESP3D current status in plain/JSON" },
-    { 444, set_cpu_state,      { WebUIAuth_Admin, WebUIAuth_Admin}, "<RESET|RESTART> - set ESP3D state" },
-    { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
-    { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control current job" },
-    { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format flash filesystem" },
-    { 715, sdcard_format,      { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format sd filesystem" },
-    { 720, flashfs_ls,         { WebUIAuth_Guest, WebUIAuth_Admin}, "<Root> json=<no> pwd=<admin password> - list flash file system" },
-    { 730, flashfs_action,     { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on flash file system" },
-    { 740, sdcard_ls,          { WebUIAuth_Guest, WebUIAuth_Admin}, "<Root> json=<no> pwd=<admin password> - list sd file system" },
-    { 750, sdcard_action,      { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on sd file system" },
-    { 780, global_fs_ls,       { WebUIAuth_Guest, WebUIAuth_Admin}, "<Root> json=<no> pwd=<admin password> - list global file system" },
-    { 790, global_fs_action,   { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on global file system" },
-    { 800, get_firmware_spec,  { WebUIAuth_Guest, WebUIAuth_Guest}, "(json=yes) - display FW Informations in plain/JSON" }
-};
-
-status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
-{
-    bool json;
-    status_code_t status = Status_Unhandled;
-
-//  hal.delay_ms(100, NULL);
-
-    webui_trim_arg(&argc, argv, "pwd=");
-
-    json = webui_get_arg(argc, argv, "json=") == NULL || webui_get_bool_arg(argc, argv, "json=");
-
-    webui_trim_arg(&argc, argv, "json");
-    webui_trim_arg(&argc, argv, "json=");
-
-    uint32_t i = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
-
-    while(i) {
-        if(webui_commands[--i].id == command) {
-#if WEBUI_AUTH_ENABLE
-            if(auth_level < (argc == 0 ? webui_commands[i].auth.read : webui_commands[i].auth.execute)) {
-                if(json)
-                    json_write_response(json_create_response_hdr(webui_commands[i].id, false, true, NULL, "Wrong authentication level"), file);
-                else
-                    vfs_puts("Wrong authentication level" ASCII_EOL, file);
-
-                status = auth_level < WebUIAuth_User ? Status_AuthenticationRequired : Status_AccessDenied;
-            } else
-#endif
-            status = webui_commands[i].handler(&webui_commands[i], argc, argv, json, file);
-            i = 0;
-        }
-    }
-
-    return status;
-}
 
 // Shared functions
 
-static cJSON *json_create_response_hdr (uint_fast16_t cmd, bool array, bool ok, cJSON **data, const char *msg)
+static json_out_t *json_create_response_hdr (uint_fast16_t cmd, response_hdr_type_t type, bool status_ok, const char *msg, vfs_file_t *file)
 {
-    bool success;
-    cJSON *root = cJSON_CreateObject();
+    bool ok;
+    json_out_t *jstream;
 
-    if((success = root != NULL)) {
-        success &= !!cJSON_AddStringToObject(root, "cmd", uitoa((uint32_t)cmd));
-        success &= !!cJSON_AddStringToObject(root, "status", ok ? "ok" : "error");
+    if((ok = !!(jstream = json_start(file, JSON_MAX_DEPTH)))) {
+        ok = ok & json_add_string(jstream, "cmd", uitoa((uint32_t)cmd));
+        ok = ok & json_add_string(jstream, "status", status_ok ? "ok" : "error");
         if(msg)
-            success &= !!cJSON_AddStringToObject(root, "data", msg);
-        else if(data != NULL)
-            success &= !!(*data = (array ? cJSON_AddArrayToObject(root, "data") : cJSON_AddObjectToObject(root, "data")));
+            ok = ok & json_add_string(jstream, "data", msg);
+        else if(type != ResponseHdrType_MSG)
+            ok = ok & (type == ResponseHdrType_AddArray ? json_start_array(jstream, "data") : json_start_tagged_object(jstream, "data"));
         else
-            success = false;
+            ok = false;
     }
 
-    if(!success && root) {
-        cJSON_Delete(root);
-        root = NULL;
+    if(!ok && jstream) {
+        json_end(jstream);
+        jstream = NULL;
     }
 
-    return root;
-}
-
-static bool json_write_response (cJSON *json, vfs_file_t *file)
-{
-    bool ok = false;
-
-    if(json) {
-
-        char *resp = cJSON_PrintUnformatted(json);
-
-        if((ok = !!resp)) {
-            cJSON_Delete(json);
-            data_is_json();
-            vfs_puts(resp, file);
-            cJSON_free(resp);
-        } else
-            cJSON_Delete(json);
-    }
-
-    return ok;
+    return jstream;
 }
 
 // Add value to the JSON response array
-static bool json_add_value (cJSON *settings, char *id, char *value)
+static bool json_add_value (json_out_t *jstream, char *id, char *value)
 {
     bool ok = true;
 
-    cJSON *setting;
-
-    if((ok = !!(setting = cJSON_CreateObject())))
+    if((ok = json_start_object(jstream)))
     {
-        ok  = !!cJSON_AddStringToObject(setting, "id", id);
-        ok = ok & !!cJSON_AddStringToObject(setting, "value", value);
-
-        if(ok)
-            cJSON_AddItemToArray(settings, setting);
+        ok = json_add_string(jstream, "id", id);
+        ok = ok & json_add_string(jstream, "value", value);
+        ok = ok & json_end_object(jstream);
     }
 
     return ok;
-}
-
-// ESP0
-static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
-{
-    bool ok;
-    char buf[200];
-    int32_t cmd = -1;
-    const webui_cmd_binding_t *cmdp = NULL;
-    uint32_t i, n = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
-    cJSON *root = NULL;
-
-    if(!(ok = argc == 0)) {
-        cmd = atoi(argv[0]);
-        for(i = 0; i < n; i++) {
-            if(webui_commands[i].id == cmd) {
-                cmdp = &webui_commands[i];
-                break;
-            }
-        }
-
-        if(cmdp == NULL)
-            strappend(buf, 2, "This command is not supported: ", argv[0]);
-        else
-            sprintf(buf, "[ESP%d]%s", cmdp->id, cmdp->help);
-
-        if(json) {
-
-            cJSON *data;
-
-            if((ok = !!(root = json_create_response_hdr(command->id, false, cmdp != NULL, &data, cmdp == NULL ? buf : NULL)))) {
-                if(cmdp) {
-                    ok = ok & !!cJSON_AddStringToObject(data, "id", uitoa(cmdp->id));
-                    ok = ok & !!cJSON_AddStringToObject(data, "help", buf);
-                }
-            }
-        } else {
-            vfs_puts(buf, file);
-            vfs_puts(WEBUI_EOL, file);
-        }
-    } else if(json) {
-
-        cJSON *data, *msg;
-
-        if((ok = !!(root = json_create_response_hdr(command->id, true, true, &data, NULL)))) {
-
-            for(i = 0; i < n; i++) {
-                if((ok = !!(msg = cJSON_CreateObject())))
-                {
-                    sprintf(buf, "[ESP%d]%s", webui_commands[i].id, webui_commands[i].help);
-
-                    ok = ok & !!cJSON_AddStringToObject(msg, "id", uitoa(webui_commands[i].id));
-                    ok = ok & !!cJSON_AddStringToObject(msg, "help", buf);
-
-                    if(ok)
-                        cJSON_AddItemToArray(data, msg);
-                }
-            }
-        }
-    } else {
-        vfs_puts("[List of ESP3D commands]" WEBUI_EOL, file);
-        for(i = 0; i < n; i++) {
-            sprintf(buf, "[ESP%d]%s" WEBUI_EOL, webui_commands[i].id, webui_commands[i].help);
-            vfs_puts(buf, file);
-        }
-    }
-
-    if(root)
-        json_write_response(root, file);
-
-    return Status_OK;
 }
 
 // ESP100 - ESP181 except ESP111 and ESP140
@@ -374,7 +163,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
 {
     bool ok;
     char response[100];
-    cJSON *root = NULL;
+    json_out_t *jstream = NULL;
     status_code_t status = Status_Unhandled;
 
     if(command->setting.id != 0) { // straight mapping
@@ -394,7 +183,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
             }
 
             if(json) {
-                ok = !!(root = json_create_response_hdr(command->id, false, !!setting, NULL, svalue));
+                ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_MSG, !!setting, svalue, file));
             } else {
                 if(setting) {
                     status = Status_OK;
@@ -424,7 +213,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
             status = sys_set_setting(command->setting.id, param);
 
             if(json)
-                root = json_create_response_hdr(command->id, false, status == Status_OK, NULL, status == Status_OK ? "ok" : "Set failed");
+                jstream = json_create_response_hdr(command->id, ResponseHdrType_MSG, status == Status_OK, status == Status_OK ? "ok" : "Set failed", file);
         }
     } else switch(command->id) {
 
@@ -433,20 +222,20 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
             if(argc == 0) {
                 if(json) {
 
-                    cJSON *data;
-
-                    if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
+                    if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddObject, true, NULL, file)))) {
 
                         const setting_detail_t *setting;
 
                         if((setting = setting_get_details(Setting_IpAddress, 0)))
-                            ok = ok & !!cJSON_AddStringToObject(data, "ip", setting_get_value(setting, 0));
+                            ok = ok & json_add_string(jstream, "ip", setting_get_value(setting, 0));
 
                         if((setting = setting_get_details(Setting_Gateway, 0)))
-                            ok = ok & !!cJSON_AddStringToObject(data, "gw", setting_get_value(setting, 0));
+                            ok = ok & json_add_string(jstream, "gw", setting_get_value(setting, 0));
 
                         if((setting = setting_get_details(Setting_NetMask, 0)))
-                            ok = ok & !!cJSON_AddStringToObject(data, "msk", setting_get_value(setting, 0));
+                            ok = ok & json_add_string(jstream, "msk", setting_get_value(setting, 0));
+
+                        json_end_object(jstream);
                     }
                 } else {
                     char ip[16], gw[16], mask[16];
@@ -472,7 +261,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
                     status = Status_Unhandled;
 
                 if(json)
-                    root = json_create_response_hdr(command->id, false, status == Status_OK, NULL, status == Status_OK ? "ok" : "Set failed");
+                    jstream = json_create_response_hdr(command->id, ResponseHdrType_MSG, status == Status_OK, status == Status_OK ? "ok" : "Set failed", file);
             }
             break;
 
@@ -480,8 +269,8 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
             break;
     }
 
-    if(root)
-        json_write_response(root, file);
+    if(json_end(jstream))
+       data_is_json();
 
     if(status != Status_OK && !json)
         vfs_puts("error:setting failure", file);
@@ -494,9 +283,10 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
 {
     char response[20];
 
-    if(json)
-        json_write_response(json_create_response_hdr(command->id, false, true, NULL, webui_get_server_info()->status.ip), file);
-    else
+    if(json) {
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, true, webui_get_server_info()->status.ip, file)))
+           data_is_json();
+    } else
         vfs_puts(strappend(response, 3, argv[0], webui_get_server_info()->status.ip, WEBUI_EOL), file);
 
     return Status_OK;
@@ -595,9 +385,10 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
                 strcpy(buf, "No parameter");
             }
 
-            if(json)
-                json_write_response(json_create_response_hdr(command->id, false, ok, NULL, buf), file);
-            else {
+            if(json) {
+                if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, ok, buf, file)))
+                    data_is_json();
+            } else {
                 vfs_puts(buf, file);
                 vfs_puts(WEBUI_EOL, file);
             }
@@ -606,17 +397,19 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
 
             if(json) {
 
-                cJSON *root, *data;
+                json_out_t *jstream;
 
-                if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
+                if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddObject, true, NULL, file)))) {
 
-                    ok = ok & !!cJSON_AddStringToObject(data, "srv1", "");
-                    ok = ok & !!cJSON_AddStringToObject(data, "srv2", "");
-                    ok = ok & !!cJSON_AddStringToObject(data, "srv3", "");
-                    ok = ok & !!cJSON_AddStringToObject(data, "zone", "GMT");
-                    ok = ok & !!cJSON_AddStringToObject(data, "dst", "NO");
+                    ok = ok & json_add_string(jstream, "srv1", "");
+                    ok = ok & json_add_string(jstream, "srv2", "");
+                    ok = ok & json_add_string(jstream, "srv3", "");
+                    ok = ok & json_add_string(jstream, "zone", "GMT");
+                    ok = ok & json_add_string(jstream, "dst", "NO");
+                    ok = ok & json_end_object(jstream);
 
-                    json_write_response(root, file);
+                    if(json_end(jstream))
+                        data_is_json();
                 }
             } else {
                 vfs_puts(strappend(buf, 3, "srv1=", "", WEBUI_EOL), file);
@@ -627,9 +420,10 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
             }
         }
     } else {
-        if(json)
-            json_write_response(json_create_response_hdr(command->id, false, false, NULL, "N/A"), file);
-        else
+        if(json) {
+            if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, false, "N/A", file)))
+                data_is_json();
+        } else
             vfs_puts("N/A" ASCII_EOL, file);
     }
 
@@ -659,9 +453,10 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
     char *msg = "Not available";
 #endif
 
-    if(json)
-        json_write_response(json_create_response_hdr(command->id, false, true, NULL, msg), file);
-    else {
+    if(json) {
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, true, msg, file)))
+            data_is_json();
+    } else {
         vfs_puts(msg, file);
         vfs_puts(WEBUI_EOL, file);
     }
@@ -683,13 +478,13 @@ static const char *get_pinname (pin_function_t function)
     return name ? name : "N/A";
 }
 
-static void show_pin_json (xbar_t *pin, void *data)
+static void show_pin_json (xbar_t *pin, void *jstream)
 {
     char id[10];
 
     strcat(strcpy(id, (char *)pin->port), uitoa(pin->pin));
 
-    json_add_value((cJSON *)data, (char *)get_pinname(pin->function), id);
+    json_add_value((json_out_t *)jstream, (char *)get_pinname(pin->function), id);
 }
 
 static void show_pin_txt (xbar_t *pin, void *file)
@@ -703,11 +498,12 @@ static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fa
 {
     if(json) {
 
-        cJSON *root, *data;
+        json_out_t *jstream;
 
-        if(hal.enumerate_pins && !!(root = json_create_response_hdr(command->id, true, true, &data, NULL))) {
-            hal.enumerate_pins(false, show_pin_json, data);
-            json_write_response(root, file);
+        if(hal.enumerate_pins && !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddArray, true, NULL, file))) {
+            hal.enumerate_pins(false, show_pin_json, jstream);
+            if(json_end_array(jstream) && json_end(jstream))
+               data_is_json();
         }
     } else
         hal.enumerate_pins(false, show_pin_txt, file);
@@ -719,14 +515,13 @@ static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fa
 
 
 // Add setting to the JSON response array
-static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
+static bool add_setting (json_out_t *jstream, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
 {
     static const char *tmap[] = { "B", "M", "X", "B", "M", "I", "F", "S", "S", "A", "I", "I" };
 
     bool ok;
-    cJSON *settingobj = NULL;
 
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting, offset)) && !!(settingobj = cJSON_CreateObject()))) {
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting, offset)) && json_start_object(jstream))) {
 
         char opt[50], name[50], *q;
         uint_fast8_t suboffset = setting->flags.subgroups ? offset / setting->flags.increment : offset;
@@ -750,21 +545,21 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
         strcat(opt, "/");
         strcat(opt, group->name);
 
-        ok = !!cJSON_AddStringToObject(settingobj, "F", opt);
+        ok = json_add_string(jstream, "F", opt);
 
         strcpy(opt, uitoa(setting->id + offset));
         if(bit >= 0) {
             strcat(opt, "#");
             strcat(opt, uitoa(bit));
         }
-        ok = ok & !!cJSON_AddStringToObject(settingobj, "P", opt);
-        ok = ok & !!cJSON_AddStringToObject(settingobj, "T", tmap[setting->datatype]);
-        ok = ok & !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
-        ok = ok & !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? name : strgetentry(opt, setting->format, bit, ','));
+        ok = ok & json_add_string(jstream, "P", opt);
+        ok = ok & json_add_string(jstream, "T", tmap[setting->datatype]);
+        ok = ok & json_add_string(jstream, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
+        ok = ok & json_add_string(jstream, "H", bit == -1 || setting->datatype == Format_Bool ? name : strgetentry(opt, setting->format, bit, ','));
         if(setting->unit)
-            ok = ok & !!cJSON_AddStringToObject(settingobj, "U", setting->unit);
+            ok = ok & json_add_string(jstream, "U", setting->unit);
         if(setting->flags.reboot_required)
-            ok = ok & !!cJSON_AddStringToObject(settingobj, "R", "1");
+            ok = ok & json_add_string(jstream, "R", "1");
 
         if(ok) switch(setting->datatype) {
 
@@ -773,9 +568,7 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
             case Format_XBitfield:
             case Format_RadioButtons:
                 {
-                    cJSON *option, *options;
-
-                    if((ok = !!(options = cJSON_AddArrayToObject(settingobj, "O")))) {
+                    if((ok = json_start_array(jstream, "O"))) {
                         if(bit == -1) {
                             uint_fast16_t i, j = strnumentries(setting->format, ',');
                             for(i = 0; ok && i < j; i++) {
@@ -784,26 +577,21 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
                           //          cJSON_AddStringToObject(option, strgetentry(opt, setting->format, i, ','), uitoa(1 << bit));
                           //      else
                                 if(strcmp(strgetentry(opt, setting->format, i, ','), "N/A")) {
-                                    if((ok = !!(option = cJSON_CreateObject()))) {
-                                        ok = !!cJSON_AddStringToObject(option, opt, uitoa(i));
-                                        if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
-                                            cJSON_Delete(option);
+                                    if((ok = json_start_object(jstream))) {
+                                        ok = json_add_string(jstream, opt, uitoa(i));
+                                        json_end_object(jstream);
                                     }
                                 }
                             }
-                        } else if((ok = !!(option = cJSON_CreateObject()))) {
-                            ok = !!cJSON_AddStringToObject(option, "Enabled", "1");
-                            if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
-                                cJSON_Delete(option);
-                            else {
-                                ok = ok & !!(option = cJSON_CreateObject());
-                                ok = ok & !!cJSON_AddStringToObject(option, "Disabled", "0");
-                                if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
-                                    cJSON_Delete(option);
+                        } else if((ok = json_start_object(jstream))) {
+                            ok = json_add_string(jstream, "Enabled", "1");
+                            json_end_object(jstream);
+                            if((ok = json_start_object(jstream))) {
+                                ok = ok & json_add_string(jstream, "Disabled", "0");
+                                json_end_object(jstream);
                             }
                         }
-                        if(!ok)
-                            cJSON_Delete(options);
+                        json_end_array(jstream);
                     }
                 }
                 break;
@@ -811,18 +599,15 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
             case Format_AxisMask:
                 {
                     uint_fast16_t i;
-                    cJSON *option, *options;
 
-                    if((ok = !!(options = cJSON_AddArrayToObject(settingobj, "O")))) {
+                    if((ok = json_start_array(jstream, "O"))) {
                         for(i = 0; ok && i < N_AXIS; i++) {
-                            if((ok = !!(option = cJSON_CreateObject()))) {
-                                ok = ok & !!cJSON_AddStringToObject(option, axis_letter[i], uitoa(i));
-                                if(!(ok = ok & !!cJSON_AddItemToArray(options, option)))
-                                    cJSON_Delete(option);
+                            if((ok = json_start_object(jstream))) {
+                                ok = ok & json_add_string(jstream, axis_letter[i], uitoa(i));
+                                json_end_object(jstream);
                             }
                         }
-                        if(!ok)
-                            cJSON_Delete(options);
+                        json_end_array(jstream);
                     }
                 }
                 break;
@@ -860,31 +645,30 @@ static bool add_setting (cJSON *settings, const setting_detail_t *setting, int32
                             max = opt;
 
                         if(setting->datatype == Format_Decimal)
-                            ok = ok & !!cJSON_AddStringToObject(settingobj, "E", uitoa(strlen(fraction)));
+                            ok = ok & json_add_string(jstream, "E", uitoa(strlen(fraction)));
                     }
 
                     if(min && !setting_is_list(setting)) {
-                        ok = ok & !!cJSON_AddStringToObject(settingobj, "M", setting->flags.allow_null ? "0" : min);
+                        ok = ok & json_add_string(jstream, "M", setting->flags.allow_null ? "0" : min);
                         if(setting->flags.allow_null)
-                            ok = ok & !!cJSON_AddStringToObject(settingobj, "MS", min);
+                            ok = ok & json_add_string(jstream, "MS", min);
                     }
 
                     if(max)
-                        ok = ok & !!cJSON_AddStringToObject(settingobj, "S", max);
+                        ok = ok & json_add_string(jstream, "S", max);
                 }
                 break;
         }
 
-        if(!(ok = ok && !!cJSON_AddItemToArray(settings, settingobj)))
-            cJSON_Delete(settingobj);
+        ok = json_end_object(jstream);
     }
 
     return ok;
 }
 
-static bool add_setting2 (const setting_detail_t *setting, uint_fast16_t offset, void *settings)
+static bool add_setting2 (const setting_detail_t *setting, uint_fast16_t offset, void *jstream)
 {
-    return add_setting((cJSON *)settings, setting, -1, offset);
+    return add_setting((json_out_t *)jstream, setting, -1, offset);
 }
 
 static int cmp_settings (const void *a, const void *b)
@@ -899,17 +683,17 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 {
     bool ok;
     uint_fast16_t idx, n_settings = 0;
-    cJSON *root = cJSON_CreateObject(), *settings = NULL;
+    json_out_t *jstream = json_start(file, JSON_MAX_DEPTH);
     setting_details_t *details = settings_get_details();
     const setting_detail_t *setting;
     setting_detail_t **all_settings, **psetting;
 
-    if((ok = root != NULL)) {
-        ok = ok & !!cJSON_AddStringToObject(root, "cmd", uitoa(command->id));
-        ok = ok & !!cJSON_AddStringToObject(root, "status", "ok");
+    if((ok = jstream != NULL)) {
+        ok = ok & json_add_string(jstream, "cmd", uitoa(command->id));
+        ok = ok & json_add_string(jstream, "status", "ok");
     }
 
-    if((ok = ok & !!(settings = cJSON_AddArrayToObject(root, "data")))) {
+    if((ok = ok & json_start_array(jstream, "data"))) {
 
         do {
             n_settings += details->n_settings;
@@ -934,7 +718,7 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
             qsort(all_settings, n_settings, sizeof(setting_detail_t *), cmp_settings);
 
             for(idx = 0; ok && idx < n_settings; idx++)
-                ok = settings_iterator(all_settings[idx], add_setting2, settings);
+                ok = settings_iterator(all_settings[idx], add_setting2, jstream);
 
             free(all_settings);
 
@@ -942,16 +726,17 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
             for(idx = 0; ok && idx < details->n_settings; idx++) {
                 setting = &details->settings[idx];
                 if(setting->is_available == NULL || setting->is_available(setting, 0))
-                    ok = settings_iterator(setting, add_setting2, settings);
+                    ok = settings_iterator(setting, add_setting2, jstream);
             }
         } while((details = details->next));
     }
 
-    if(root) {
-        if(ok)
-            json_write_response(root, file);
-        else
-            cJSON_Delete(root);
+    if(jstream) {
+        if(ok) {
+            json_end_array(jstream);
+            data_is_json();
+        }
+        json_end(jstream);
     }
 
     return Status_OK;
@@ -1010,12 +795,10 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
 
     if(json) {
 
-        cJSON *root;
         const char *msg = errors_get_description(status);
 
-        if((ok = !!(root = json_create_response_hdr(command->id, false, status == Status_OK, NULL, status == Status_OK ? "ok" : (msg ? msg : "Set failed")))))
-            json_write_response(root, file);
-
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, status == Status_OK, status == Status_OK ? "ok" : (msg ? msg : "Set failed"), file)))
+            data_is_json();
     } else
         grbl.report.status_message(status);
 
@@ -1028,33 +811,32 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
 static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
-    cJSON *root, *data, *ap;
+    json_out_t *jstream;
 
     wifi_ap_scan();
 
     ap_list_t *ap_list = wifi_get_aplist();
 
-    if((ok = !!(root = json_create_response_hdr(command->id, true, true, &data, NULL)))) {
+    if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddArray, true, NULL, file)))) {
 
         if(ap_list && ap_list->ap_records) {
 
             for(int i = 0; i < ap_list->ap_num; i++) {
-                if((ok = !!(ap = cJSON_CreateObject())))
+                if((ok = json_start_object(jstream)))
                 {
-                    ok = !!cJSON_AddStringToObject(ap, "SSID", (char *)ap_list->ap_records[i].ssid);
-                    ok = ok & !!cJSON_AddNumberToObject(ap, "SIGNAL", (double)ap_list->ap_records[i].rssi);
-                    ok = ok & !!cJSON_AddStringToObject(ap, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
-                    if(ok)
-                        cJSON_AddItemToArray(data, ap);
+                    ok = json_add_string(jstream, "SSID", (char *)ap_list->ap_records[i].ssid);
+                    ok = ok & json_add_int(jstream, "SIGNAL", (int32_t)ap_list->ap_records[i].rssi);
+                    ok = ok & json_add_string(jstream, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
+                    ok = ok & json_end_object(jstream);
                 }
             }
         }
+
+        ok = ok & json_end_array(jstream);
     }
 
-    if(ok)
-        json_write_response(root, file);
-    else if(root)
-        cJSON_Delete(root);
+    if(json_end(jstream))
+       data_is_json();
 
     if(ap_list)
         wifi_release_aplist();
@@ -1078,67 +860,67 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
     if(json) {
 
         bool ok;
-        cJSON *root, *data;
+        json_out_t *jstream;
 
-        if((ok = !!(root = json_create_response_hdr(command_id, true, true, &data, NULL)))) {
+        if((ok = !!(jstream = json_create_response_hdr(command_id, ResponseHdrType_AddArray, true, NULL, file)))) {
 
             if(hal.get_free_mem)
-                ok = ok & json_add_value(data, "free mem", btoa(hal.get_free_mem()));
+                ok = ok & json_add_value(jstream, "free mem", btoa(hal.get_free_mem()));
 
 //            ok = ok & json_add_value(data, "chip id", "0");
-            ok = ok & json_add_value(data, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
+            ok = ok & json_add_value(jstream, "CPU Freq", strcat(strcpy(buf, uitoa(hal.f_mcu ? hal.f_mcu : hal.f_step_timer / 1000000UL)), " MHz"));
 
             if(mount) {
 
-                ok = ok & json_add_value(data, "FS type", "SD");
+                ok = ok & json_add_value(jstream, "FS type", "SD");
 
                 strcpy(buf, btoa(mount->size));
                 strcat(buf, "/");
                 strcat(buf, btoa(mount->used));
-                ok = ok & json_add_value(data, "FS usage", buf);
+                ok = ok & json_add_value(jstream, "FS usage", buf);
             }
 
 #if WIFI_ENABLE
-            ok = ok & json_add_value(data, "wifi", "ON");
+            ok = ok & json_add_value(jstream, "wifi", "ON");
 #elif ETHERNET_ENABLE
-            ok = ok & json_add_value(data, "wifi", "OFF");
-            ok = ok & json_add_value(data, "ethernet", "ON");
+            ok = ok & json_add_value(jstream, "wifi", "OFF");
+            ok = ok & json_add_value(jstream, "ethernet", "ON");
 #endif
             if(network->status.services.http)
-                ok = ok & json_add_value(data, "HTTP port", uitoa(network->status.http_port));
+                ok = ok & json_add_value(jstream, "HTTP port", uitoa(network->status.http_port));
             if(network->status.services.telnet)
-                ok = ok & json_add_value(data, "Telnet port", uitoa(network->status.telnet_port));
+                ok = ok & json_add_value(jstream, "Telnet port", uitoa(network->status.telnet_port));
             if(network->status.services.webdav)
-                ok = ok & json_add_value(data, "WebDav port", uitoa(network->status.http_port));
+                ok = ok & json_add_value(jstream, "WebDav port", uitoa(network->status.http_port));
             if(network->status.services.ftp) {
                 strappend(buf, 3, uitoa(network->status.ftp_port), "/", uitoa(network->status.ftp_port));
-                ok = ok & json_add_value(data, "Ftp ports", buf);
+                ok = ok & json_add_value(jstream, "Ftp ports", buf);
             }
             if(network->status.services.websocket)
-                ok = ok & json_add_value(data, "Websocket port", uitoa(network->status.websocket_port));
+                ok = ok & json_add_value(jstream, "Websocket port", uitoa(network->status.websocket_port));
 
             if(network->is_ethernet) {
 
                 if(*network->mac != '\0')
-                    ok = ok & json_add_value(data, "ethernet", network->mac);
+                    ok = ok & json_add_value(jstream, "ethernet", network->mac);
 
                 if(network->link_up)
                     strappend(buf, 3, "connected (", uitoa(network->mbps), "Mbps)");
                 else
                     strcpy(buf, "disconnected");
-                ok = ok & json_add_value(data, "cable", buf);
+                ok = ok & json_add_value(jstream, "cable", buf);
 
-                ok = ok & json_add_value(data, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
-                ok = ok & json_add_value(data, "ip", network->status.ip);
+                ok = ok & json_add_value(jstream, "ip mode", network->status.ip_mode == IpMode_Static ? "static" : "dhcp");
+                ok = ok & json_add_value(jstream, "ip", network->status.ip);
 
                 if(*network->status.gateway != '\0')
-                    ok = ok & json_add_value(data, "gw", network->status.gateway);
+                    ok = ok & json_add_value(jstream, "gw", network->status.gateway);
 
                 if(*network->status.mask != '\0')
-                    ok = ok & json_add_value(data, "msk", network->status.mask);
+                    ok = ok & json_add_value(jstream, "msk", network->status.mask);
 
                 if(network->status.services.dns)
-                    ok = ok & json_add_value(data, "DNS", network->status.gateway);
+                    ok = ok & json_add_value(jstream, "DNS", network->status.gateway);
             }
 
 #if WEBUI_AUTH_ENABLE
@@ -1149,14 +931,16 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
                 strappend(buf, 3, "direct (", sdfs->name, ")");
             else
                 strcpy(buf, "none");
-            ok = ok & json_add_value(data, "sd", buf);
+            ok = ok & json_add_value(jstream, "sd", buf);
 
-            ok = ok & json_add_value(data, "targetfw", FIRMWARE_TARGET);
+            ok = ok & json_add_value(jstream, "targetfw", FIRMWARE_TARGET);
             strappend(buf, 3, GRBL_VERSION, "-", uitoa(GRBL_BUILD));
-            ok = ok & json_add_value(data, "FW ver", buf);
-            ok = ok & json_add_value(data, "FW arch", hal.info);
+            ok = ok & json_add_value(jstream, "FW ver", buf);
+            ok = ok & json_add_value(jstream, "FW arch", hal.info);
+            ok = ok & json_end_array(jstream);
 
-            json_write_response(root, file);
+            if(json_end(jstream))
+               data_is_json();
         }
     } else {
 
@@ -1277,26 +1061,24 @@ static status_code_t fs_list_files (const struct webui_cmd_binding *command, uin
 {
     bool ok;
     char path[255];
-    cJSON *root = NULL;
+    json_out_t *jstream = NULL;
 
     if(drive) {
 
         char *arg = webui_get_arg(argc, argv, NULL);
 
         if(json) {
-
-            cJSON *data;
-
-            if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
-                ok = ok & !!cJSON_AddStringToObject(data, "path", get_path(path, arg ? arg : "/", drive));
-                ok = ok & fs_ls(data, path, NULL, drive);
+            if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddObject, true, NULL, file)))) {
+                ok = ok & json_add_string(jstream, "path", get_path(path, arg ? arg : "/", drive));
+                ok = ok & fs_ls(jstream, path, NULL, drive);
+                ok = ok & json_end_object(jstream);
             }
         }
     } else
-        json_write_response(json_create_response_hdr(command->id, false, false, NULL, "Not mounted"), file);
+        jstream = json_create_response_hdr(command->id, ResponseHdrType_MSG, false, "Not mounted", file);
 
-    if(root)
-        json_write_response(root, file);
+    if(json_end(jstream))
+       data_is_json();
 
     return Status_OK; // for now
 }
@@ -1355,9 +1137,10 @@ static status_code_t fs_action (const struct webui_cmd_binding *command, uint_fa
     if(*response == '\0')
         strcpy(response, "ok");
 
-    if(json)
-        json_write_response(json_create_response_hdr(command->id, false, ok, NULL, response), file);
-    else
+    if(json) {
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, ok, response, file)))
+            data_is_json();
+    } else
         vfs_puts(response, file);
 
     return Status_OK; // for now
@@ -1382,9 +1165,10 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
     } else
         strcpy(msg, "Flash filesystem not available");
 
-    if(json)
-        json_write_response(json_create_response_hdr(command->id, false, ok, NULL, msg), file);
-    else
+    if(json) {
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, ok, msg, file)))
+            data_is_json();
+    } else
         vfs_puts(strcat(msg, WEBUI_EOL), file);
 
     return Status_OK;
@@ -1395,10 +1179,10 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
 {
     bool ok;
     stream_job_t *job = stream_get_job_info();
-    cJSON *root, *data;
+    json_out_t *jstream;
     char *action = webui_get_arg(argc, argv, "action=");
 
-    if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
+    if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddObject, true, NULL, file)))) {
 
         if(action) {
 
@@ -1407,23 +1191,23 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
                 case 0:
                     if(job)
                         grbl.enqueue_realtime_command(CMD_FEED_HOLD);
-                    ok = ok & !!cJSON_AddStringToObject(data, "status", job ? "Stream paused" : "No stream to pause");
+                    ok = ok & json_add_string(jstream, "status", job ? "Stream paused" : "No stream to pause");
                     break;
 
                 case 1:
                     if(job)
                         grbl.enqueue_realtime_command(CMD_CYCLE_START);
-                    ok = ok & !!cJSON_AddStringToObject(data, "status", job ? "Stream resumed" : "No stream to resume");
+                    ok = ok & json_add_string(jstream, "status", job ? "Stream resumed" : "No stream to resume");
                     break;
 
                 case 2:
                     if(job)
                         grbl.enqueue_realtime_command(CMD_STOP);
-                    ok = ok & !!cJSON_AddStringToObject(data, "status", job ? "Stream aborted" : "No stream to abort");
+                    ok = ok & json_add_string(jstream, "status", job ? "Stream aborted" : "No stream to abort");
                     break;
 
                 default:
-                    ok = ok & !!cJSON_AddStringToObject(data, "status", "Unknown action");
+                    ok = ok & json_add_string(jstream, "status", "Unknown action");
                     break;
             }
 
@@ -1432,28 +1216,30 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
             switch(state_get()) {
 
                 case STATE_HOLD:
-                    ok = ok & !!cJSON_AddStringToObject(data, "status", "pause stream");
+                    ok = ok & json_add_string(jstream, "status", "pause stream");
                     break;
 
                 default:
-                    ok = ok & !!cJSON_AddStringToObject(data, "status", "processing");
-                    ok = ok & !!cJSON_AddStringToObject(data, "total", uitoa(job->size));
-                    ok = ok & !!cJSON_AddStringToObject(data, "processed", uitoa(job->pos));
-                    ok = ok & !!cJSON_AddStringToObject(data, "type", "SD");
-                    ok = ok & !!cJSON_AddStringToObject(data, "name", job->name);
+                    ok = ok & json_add_string(jstream, "status", "processing");
+                    ok = ok & json_add_string(jstream, "total", uitoa(job->size));
+                    ok = ok & json_add_string(jstream, "processed", uitoa(job->pos));
+                    ok = ok & json_add_string(jstream, "type", "SD");
+                    ok = ok & json_add_string(jstream, "name", job->name);
                     break;
             }
 
         } else {
 
-            ok = ok & !!cJSON_AddStringToObject(data, "status", "no stream");
+            ok = ok & json_add_string(jstream, "status", "no stream");
             if(gc_state.last_error != Status_OK)
-                ok = ok & !!cJSON_AddStringToObject(data, "code", uitoa(gc_state.last_error));
+                ok = ok & json_add_string(jstream, "code", uitoa(gc_state.last_error));
         }
+
+        json_end_object(jstream);
     }
 
-    if(root)
-        json_write_response(root, file);
+    if(json_end(jstream))
+       data_is_json();
 
     return Status_OK;
 }
@@ -1472,9 +1258,10 @@ static status_code_t flash_format (const struct webui_cmd_binding *command, uint
         ok = vfs_drive_format(drive) == 0;
     }
 
-    if(json)
-        json_write_response(json_create_response_hdr(command->id, false, ok, NULL, ok ? "ok" : "Invalid parameter"), file);
-    else
+    if(json) {
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, ok, ok ? "ok" : "Invalid parameter", file)))
+            data_is_json();
+    } else
         vfs_puts(ok ? "ok" WEBUI_EOL : "Invalid parameter" WEBUI_EOL, file);
 
     return Status_OK;
@@ -1494,9 +1281,10 @@ static status_code_t sdcard_format (const struct webui_cmd_binding *command, uin
         ok = vfs_drive_format(drive) == 0;
     }
 
-    if(json)
-        json_write_response(json_create_response_hdr(command->id, false, ok, NULL, ok ? "ok" : "Invalid parameter"), file);
-    else
+    if(json) {
+        if(json_end(json_create_response_hdr(command->id, ResponseHdrType_MSG, ok, ok ? "ok" : "Invalid parameter", file)))
+            data_is_json();
+    } else
         vfs_puts(ok ? "ok" WEBUI_EOL : "Invalid parameter" WEBUI_EOL, file);
 
     return Status_OK;
@@ -1559,47 +1347,49 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     if(json) {
 
         bool ok;
-        cJSON *root, *data;
+        json_out_t *jstream;
 
-        if((ok = !!(root = json_create_response_hdr(command->id, false, true, &data, NULL)))) {
+        if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddObject, true, NULL, file)))) {
 
-            ok = ok & !!cJSON_AddStringToObject(data, "FWVersion", GRBL_VERSION);
-            ok = ok & !!cJSON_AddStringToObject(data, "FWTarget", FIRMWARE_TARGET);
-            ok = ok & !!cJSON_AddStringToObject(data, "FWTargetID", FIRMWARE_ID);
-            ok = ok & !!cJSON_AddStringToObject(data, "Setup", "Enabled");
-            ok = ok & !!cJSON_AddStringToObject(data, "SDConnection", sdfs ? "direct" : "none");
-            ok = ok & !!cJSON_AddStringToObject(data, "SerialProtocol", "Socket");
+            ok = ok & json_add_string(jstream, "FWVersion", GRBL_VERSION);
+            ok = ok & json_add_string(jstream, "FWTarget", FIRMWARE_TARGET);
+            ok = ok & json_add_string(jstream, "FWTargetID", FIRMWARE_ID);
+            ok = ok & json_add_string(jstream, "Setup", "Enabled");
+            ok = ok & json_add_string(jstream, "SDConnection", sdfs ? "direct" : "none");
+            ok = ok & json_add_string(jstream, "SerialProtocol", "Socket");
 #if WEBUI_AUTH_ENABLE
-            ok = ok & !!cJSON_AddStringToObject(data, "Authentication", "Enabled");
+            ok = ok & json_add_string(jstream, "Authentication", "Enabled");
 #else
-            ok = ok & !!cJSON_AddStringToObject(data, "Authentication", "Disabled");
+            ok = ok & json_add_string(jstream, "Authentication", "Disabled");
 #endif
-            ok = ok & !!cJSON_AddStringToObject(data, "WebCommunication", "Synchronous");
-            ok = ok & !!cJSON_AddStringToObject(data, "WebSocketIP", network->status.ip);
-            ok = ok & !!cJSON_AddStringToObject(data, "WebSocketSubProtocol", "webui-v3");
-            ok = ok & !!cJSON_AddStringToObject(data, "WebSocketPort", uitoa(network->status.websocket_port));
-            ok = ok & !!cJSON_AddStringToObject(data, "Hostname", network->status.hostname);
+            ok = ok & json_add_string(jstream, "WebCommunication", "Synchronous");
+            ok = ok & json_add_string(jstream, "WebSocketIP", network->status.ip);
+            ok = ok & json_add_string(jstream, "WebSocketSubProtocol", "webui-v3");
+            ok = ok & json_add_string(jstream, "WebSocketPort", uitoa(network->status.websocket_port));
+            ok = ok & json_add_string(jstream, "Hostname", network->status.hostname);
 #if WIFI_ENABLE
   #if WIFI_SOFTAP
-            ok = ok & !!cJSON_AddStringToObject(data, "WiFiMode", "AP");
+            ok = ok & json_add_string(jstream, "WiFiMode", "AP");
   #else
-            ok = ok & !!cJSON_AddStringToObject(data, "WiFiMode", "STA");
+            ok = ok & json_add_string(jstream, "WiFiMode", "STA");
   #endif
 #endif
-            ok = ok & !!cJSON_AddStringToObject(data, "FlashFileSystem", flashfs ? flashfs->name : "none");
-            ok = ok & !!cJSON_AddStringToObject(data, "HostPath", hostpath);
-            ok = ok & !!cJSON_AddStringToObject(data, "WebUpdate", /*flashfs || sdfs ? "Enabled" :*/ "Disabled");
-            ok = ok & !!cJSON_AddStringToObject(data, "FileSystem", flashfs ? "flash" : "none");
+            ok = ok & json_add_string(jstream, "FlashFileSystem", flashfs ? flashfs->name : "none");
+            ok = ok & json_add_string(jstream, "HostPath", hostpath);
+            ok = ok & json_add_string(jstream, "WebUpdate", /*flashfs || sdfs ? "Enabled" :*/ "Disabled");
+            ok = ok & json_add_string(jstream, "FileSystem", flashfs ? "flash" : "none");
 
             if(hal.rtc.get_datetime) {
                 struct tm time;
-                ok = ok & !!cJSON_AddStringToObject(data, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
+                ok = ok & json_add_string(jstream, "Time", hal.rtc.get_datetime(&time) ? "Manual" : "Not set");
             } else
-                ok = ok & !!cJSON_AddStringToObject(data, "Time", "none");
+                ok = ok & json_add_string(jstream, "Time", "none");
 
-            ok = ok & !!cJSON_AddStringToObject(data, "Axisletters", axisletters);
+            ok = ok & json_add_string(jstream, "Axisletters", axisletters);
+            ok = ok & json_end_object(jstream);
 
-            json_write_response(root, file);
+            if(json_end(jstream))
+               data_is_json();
         }
     } else {
 
@@ -1643,6 +1433,174 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     }
 
     return Status_OK;
+}
+
+static const webui_cmd_binding_t webui_commands[] = {
+    { 0,   list_commands,      { WebUIAuth_Guest, WebUIAuth_None},  "(<command id>) - display this help" },
+// Settings commands
+#if WIFI_ENABLE
+    { 100, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set STA SSID", { Setting_WiFi_STA_SSID, -1 } },
+    { 101, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set STA password", { Setting_WiFi_STA_Password, -1 } },
+    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set STA IP mode", { Setting_IpMode, -1 } },
+    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set STA IP/Mask/GW", { 0, -1 } },
+    { 105, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set AP SSID", { Setting_WiFi_AP_SSID, -1 } },
+    { 106, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set AP password", { Setting_WiFi_AP_Password, -1 } },
+    { 107, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ipv4>) - display/set AP IP", { Setting_IpAddress2, -1 } },
+    { 108, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<channel>) - display/set AP channel", { Setting_Wifi_AP_Channel, -1 } },
+//  { 110, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "<BT|WIFI-STA|WIFI-AP|WIFI-SETUP|ETH-STA|OFF> - display/set radio state", { Setting_WifiMode, -1 } },
+#elif ETHERNET_ENABLE
+    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set Ethernet IP mode", { Setting_IpMode, -1 } },
+    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set Ethernet IP/Mask/GW", { 0, -1 } },
+#endif
+#if WIFI_ENABLE || ETHERNET_ENABLE
+    { 111, get_current_ip,     { WebUIAuth_Guest, WebUIAuth_Admin}, "- display current IP" },
+    { 112, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<hostname>) - display/set Hostname", { Setting_Hostname, -1 } },
+  #if HTTP_ENABLE
+    { 120, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set HTTP state", { Setting_NetworkServices, 2 } },
+    { 121, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set HTTP port", { Setting_HttpPort, -1 } },
+  #endif
+  #if TELNET_ENABLE
+    { 130, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set Telnet state", { Setting_NetworkServices, 0 } },
+    { 131, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set Telnet port", { Setting_TelnetPort, -1 } },
+  #endif
+    { 140, get_set_time,       { WebUIAuth_Guest, WebUIAuth_Admin}, "(json=yes) - sync/display/set time"},
+  #if WEBSOCKET_ENABLE
+    { 160, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set WebSocket state", { Setting_NetworkServices, 1 } },
+    { 161, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set WebSocket port", { Setting_WebSocketPort, -1 } },
+  #endif
+  #if FTP_ENABLE
+    { 180, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set FTP state", { Setting_NetworkServices, 3 } },
+    { 181, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set FTP port", { Setting_WebSocketPort, -1 } },
+  #endif
+#endif
+// Action commands
+    { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
+    { 220, show_pins,          { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<SNAP>) - show pins" },
+    { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
+    { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
+#if WIFI_ENABLE
+    { 410, get_ap_list,        { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display available AP list (limited to 30) in plain/JSON" },
+#endif
+    { 420, get_system_status,  { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display ESP3D current status in plain/JSON" },
+    { 444, set_cpu_state,      { WebUIAuth_Admin, WebUIAuth_Admin}, "<RESET|RESTART> - set ESP3D state" },
+    { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
+    { 701, handle_job_status,  { WebUIAuth_Guest, WebUIAuth_Admin}, "(action=<PAUSE|RESUME|ABORT>) - query or control current job" },
+    { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format flash filesystem" },
+    { 715, sdcard_format,      { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format sd filesystem" },
+    { 720, flashfs_ls,         { WebUIAuth_Guest, WebUIAuth_Admin}, "<jstream> json=<no> pwd=<admin password> - list flash file system" },
+    { 730, flashfs_action,     { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on flash file system" },
+    { 740, sdcard_ls,          { WebUIAuth_Guest, WebUIAuth_Admin}, "<jstream> json=<no> pwd=<admin password> - list sd file system" },
+    { 750, sdcard_action,      { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on sd file system" },
+    { 780, global_fs_ls,       { WebUIAuth_Guest, WebUIAuth_Admin}, "<jstream> json=<no> pwd=<admin password> - list global file system" },
+    { 790, global_fs_action,   { WebUIAuth_Guest, WebUIAuth_Admin}, "<create|exists|remove|mkdir|rmdir>=<path> (json=no) - action on global file system" },
+    { 800, get_firmware_spec,  { WebUIAuth_Guest, WebUIAuth_Guest}, "(json=yes) - display FW Informations in plain/JSON" }
+};
+
+// ESP0
+static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+{
+    bool ok;
+    char buf[200];
+    int32_t cmd = -1;
+    const webui_cmd_binding_t *cmdp = NULL;
+    uint32_t i, n = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
+    json_out_t *jstream = NULL;
+
+    if(!(ok = argc == 0)) {
+
+        cmd = atoi(argv[0]);
+        for(i = 0; i < n; i++) {
+            if(webui_commands[i].id == cmd) {
+                cmdp = &webui_commands[i];
+                break;
+            }
+        }
+
+        if(cmdp == NULL)
+            strappend(buf, 2, "This command is not supported: ", argv[0]);
+        else
+            sprintf(buf, "[ESP%d]%s", cmdp->id, cmdp->help);
+
+        if(json) {
+            if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddObject, cmdp != NULL, cmdp == NULL ? buf : NULL, file)))) {
+                if(cmdp) {
+                    ok = ok & json_add_string(jstream, "id", uitoa(cmdp->id));
+                    ok = ok & json_add_string(jstream, "help", buf);
+                }
+            }
+
+            json_end_object(jstream);
+
+        } else {
+            vfs_puts(buf, file);
+            vfs_puts(WEBUI_EOL, file);
+        }
+    } else if(json) {
+
+        if((ok = !!(jstream = json_create_response_hdr(command->id, ResponseHdrType_AddArray, true, NULL, file)))) {
+
+            for(i = 0; i < n; i++) {
+                if((ok = json_start_object(jstream)))
+                {
+                    sprintf(buf, "[ESP%d]%s", webui_commands[i].id, webui_commands[i].help);
+
+                    ok = ok & json_add_string(jstream, "id", uitoa(webui_commands[i].id));
+                    ok = ok & json_add_string(jstream, "help", buf);
+                    ok = ok & json_end_object(jstream);
+                }
+            }
+
+            json_end_array(jstream);
+        }
+    } else {
+        vfs_puts("[List of ESP3D commands]" WEBUI_EOL, file);
+        for(i = 0; i < n; i++) {
+            sprintf(buf, "[ESP%d]%s" WEBUI_EOL, webui_commands[i].id, webui_commands[i].help);
+            vfs_puts(buf, file);
+        }
+    }
+
+    if(json_end(jstream))
+        data_is_json();
+
+    return Status_OK;
+}
+
+status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
+{
+    bool json;
+    status_code_t status = Status_Unhandled;
+
+//  hal.delay_ms(100, NULL);
+
+    webui_trim_arg(&argc, argv, "pwd=");
+
+    json = webui_get_arg(argc, argv, "json=") == NULL || webui_get_bool_arg(argc, argv, "json=");
+
+    webui_trim_arg(&argc, argv, "json");
+    webui_trim_arg(&argc, argv, "json=");
+
+    uint32_t i = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
+
+    while(i) {
+        if(webui_commands[--i].id == command) {
+#if WEBUI_AUTH_ENABLE
+            if(auth_level < (argc == 0 ? webui_commands[i].auth.read : webui_commands[i].auth.execute)) {
+                if(json) {
+                    if(json_end(json_create_response_hdr(webui_commands[i].id, ResponseHdrType_MSG, true, "Wrong authentication level"))
+                        data_is_json();
+                } else
+                    vfs_puts("Wrong authentication level" ASCII_EOL, file);
+
+                status = auth_level < WebUIAuth_User ? Status_AuthenticationRequired : Status_AccessDenied;
+            } else
+#endif
+            status = webui_commands[i].handler(&webui_commands[i], argc, argv, json, file);
+            i = 0;
+        }
+    }
+
+    return status;
 }
 
 #endif // WEBUI_ENABLE

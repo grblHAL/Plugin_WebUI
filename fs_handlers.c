@@ -38,10 +38,10 @@
 #include "networking/httpd.h"
 #include "networking/http_upload.h"
 #include "networking/utils.h"
-#include "networking/cJSON.h"
 
 #include "grbl/vfs.h"
 #include "grbl/strutils.h"
+#include "grbl/stream_json.h"
 
 static bool file_is_json = false;
 
@@ -50,33 +50,30 @@ static void data_is_json (void)
     file_is_json = true;
 }
 
-// add file to the JSON response array
-static bool add_file (cJSON *files, char *path, vfs_dirent_t *file, time_t *mtime)
+// Add file to the JSON response array
+static bool add_file (json_out_t *files, char *path, vfs_dirent_t *file, time_t *mtime)
 {
     bool ok;
 
-    cJSON *fileinfo;
+    if((ok = json_start_object(files))) {
 
-    if((ok = (fileinfo = cJSON_CreateObject()) != NULL)) {
-
-        ok = !!cJSON_AddStringToObject(fileinfo, "name", file->name);
+        ok = json_add_string(files, "name", file->name);
 #if WEBUI_ENABLE != 2
         if(mtime)
-            ok = ok & !!cJSON_AddStringToObject(fileinfo, "time", strtoisodt(gmtime(mtime)));
+            ok = ok & json_add_string(files, "time", strtoisodt(gmtime(mtime)));
 #else
-        ok = ok & !!cJSON_AddStringToObject(fileinfo, "datetime", "");
-        ok = ok & !!cJSON_AddStringToObject(fileinfo, "shortname", file->name);
+        ok = ok & json_add_string(files, "datetime", "");
+        ok = ok & json_add_string(files, "shortname", file->name);
 #endif
         if(file->st_mode.directory)
-            ok = ok & !!cJSON_AddNumberToObject(fileinfo, "size", -1.0);
+            ok = ok & json_add_int(files, "size", -1);
         else
-            ok = ok & !!cJSON_AddStringToObject(fileinfo, "size", btoa(file->size));
+            ok = ok & json_add_string(files, "size", btoa(file->size));
 
-        if(!ok)
-            cJSON_Delete(fileinfo);
+        ok = ok & json_end_object(files);
     }
 
-    return ok && cJSON_AddItemToArray(files, fileinfo);
+    return ok;
 }
 
 static char *get_fullpath (char *path, char *filename)
@@ -86,7 +83,7 @@ static char *get_fullpath (char *path, char *filename)
     return strcat(strcat(strcpy(fullpath, vfs_fixpath(path)), "/"), filename);
 }
 
-static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
+static int sd_scan_dir (json_out_t *files, char *path, uint_fast8_t depth)
 {
     int res = 0;
     bool scan = true, subdirs = false;
@@ -150,22 +147,24 @@ static int sd_scan_dir (cJSON *files, char *path, uint_fast8_t depth)
         }
     }
 
+    json_end_array(files);
+
     if(dir)
         vfs_closedir(dir);
 
     return res;
 }
 
-bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
+bool fs_ls (json_out_t *root, char *path, char *status, vfs_drive_t *drive)
 {
     bool ok;
-    cJSON *files = NULL;
+    json_out_t *files = root;
 
-    if((ok = (root && (files = cJSON_AddArrayToObject(root, "files"))))) {
+    if((ok = (root && json_start_array(root, "files")))) {
 
         vfs_fixpath(path);
 
-        if((ok = sd_scan_dir(files, path, 1) == 0 && !!cJSON_AddStringToObject(root, "path", path))) {
+        if((ok = sd_scan_dir(files, path, 1) == 0 && json_add_string(root, "path", path))) {
 
             vfs_free_t *mount;
 
@@ -176,13 +175,13 @@ bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
 
             if(mount) {
                 uint32_t pct_used = (mount->used * 100) / mount->size;
-                ok = ok & !!cJSON_AddStringToObject(root, "total", btoa(mount->size));
-                ok = ok & !!cJSON_AddStringToObject(root, "used", btoa(mount->used));
-                ok = ok & !!cJSON_AddStringToObject(root, "occupation", uitoa(pct_used == 0 ? 1 : pct_used));
+                ok = ok & json_add_string(root, "total", btoa(mount->size));
+                ok = ok & json_add_string(root, "used", btoa(mount->used));
+                ok = ok & json_add_string(root, "occupation", uitoa(pct_used == 0 ? 1 : pct_used));
             }
             if(status) {
-                ok = ok & !!cJSON_AddStringToObject(root, "mode", "direct");
-                ok = ok & !!cJSON_AddStringToObject(root, "status", status);
+                ok = ok & json_add_string(root, "mode", "direct");
+                ok = ok & json_add_string(root, "status", status);
             }
         }
     }
@@ -193,24 +192,15 @@ bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive)
 static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, vfs_drive_t *drive)
 {
     bool ok = false;
-    cJSON *root = cJSON_CreateObject();
+    json_out_t *root = json_start(file, 10);
 
-    if(root && fs_ls(root, path, status, drive)) {
+    if(root && (ok = fs_ls(root, path, status, drive))) {
 
-        char *resp = cJSON_PrintUnformatted(root);
-
-        if((ok = !!resp)) {
-            cJSON_Delete(root);
-            data_is_json();
-            vfs_puts(resp, file);
-            cJSON_free(resp);
-        }
+        if(json_end(root))
+           data_is_json();
 
         http_set_response_header(request, "Cache-Control", "no-cache");
     }
-
-    if(root && !ok)
-        cJSON_Delete(root);
 
     return ok;
 }

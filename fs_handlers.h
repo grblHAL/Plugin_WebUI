@@ -26,7 +26,7 @@
 
 #pragma once
 
-#include "networking/cJSON.h"
+#include "grbl/stream_json.h"
 
 vfs_drive_t *fs_get_root_drive (void);
 vfs_drive_t *fs_get_sd_drive (void);
@@ -34,4 +34,4 @@ vfs_drive_t *fs_get_flash_drive (bool add_hidden);
 const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive);
 const char *fs_download_handler (http_request_t *request, vfs_drive_t *drive);
 const char *fs_upload_handler (http_request_t *request, vfs_drive_t *drive);
-bool fs_ls (cJSON *root, char *path, char *status, vfs_drive_t *drive);
+bool fs_ls (json_out_t *root, char *path, char *status, vfs_drive_t *drive);

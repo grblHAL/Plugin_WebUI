@@ -33,7 +33,6 @@
 
 #include "networking/networking.h"
 #include "networking/utils.h"
-#include "networking/cJSON.h"
 
 #include "args.h"
 #include "webui.h"
@@ -42,17 +41,15 @@
 #include "grbl/report.h"
 #include "grbl/state_machine.h"
 #include "grbl/strutils.h"
+#include "grbl/stream_json.h"
 
 #if FS_ENABLE & FS_SDCARD
 #include "sdcard/sdcard.h"
-//#include "esp_vfs_fat.h"
 #endif
 
 #if WIFI_ENABLE
 #include "wifi.h"
 #endif
-
-//#include "flashfs.h"
 
 #ifndef LINE_BUFFER_SIZE
 #define LINE_BUFFER_SIZE 257 // 256 characters plus terminator
@@ -82,124 +79,6 @@ typedef struct webui_cmd_binding {
     webui_setting_map_t setting;
 } webui_cmd_binding_t;
 
-//typedef status_code_t (*webui_command_handler_ptr)(const webui_cmd_binding_t *command, uint_fast16_t argc, char **argv, bool isv3);
-
-static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-#if FS_ENABLE & FS_SDCARD
-static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t get_sd_content (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-#endif
-#if WIFI_ENABLE
-static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-#endif
-#if FLASHFS_ENABLE
-static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-static status_code_t flash_get_capacity (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file);
-#endif
-
-static const webui_cmd_binding_t webui_commands[] = {
-// Settings commands
-#if WIFI_ENABLE
-    { 100, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set STA SSID", { Setting_WiFi_STA_SSID, -1 } },
-    { 101, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set STA password", { Setting_WiFi_STA_Password, -1 } },
-    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set STA IP mode", { Setting_IpMode, -1 } },
-    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set STA IP/Mask/GW", { 0, -1 } },
-    { 105, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set AP SSID", { Setting_WiFi_AP_SSID, -1 } },
-    { 106, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set AP password", { Setting_WiFi_AP_Password, -1 } },
-    { 107, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ipv4>) - display/set AP IP", { Setting_IpAddress2, -1 } },
-    { 108, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<channel>) - display/set AP channel", { Setting_Wifi_AP_Channel, -1 } },
-//  { 110, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "<BT|WIFI-STA|WIFI-AP|WIFI-SETUP|ETH-STA|OFF> - display/set radio state", { Setting_WifiMode, -1 } },
-#elif ETHERNET_ENABLE
-    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set Ethernet IP mode", { Setting_IpMode, -1 } },
-    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set Ethernet IP/Mask/GW", { 0, -1 } },
-#endif
-#if WIFI_ENABLE || ETHERNET_ENABLE
-    { 111, get_current_ip,     { WebUIAuth_Guest, WebUIAuth_Admin}, "- display current IP" },
-    { 112, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<hostname>) - display/set Hostname", { Setting_Hostname, -1 } },
-  #if HTTP_ENABLE
-    { 120, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set HTTP state", { Setting_NetworkServices, 2 } },
-    { 121, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set HTTP port", { Setting_HttpPort, -1 } },
-  #endif
-  #if TELNET_ENABLE
-    { 130, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set Telnet state", { Setting_NetworkServices, 0 } },
-    { 131, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set Telnet port", { Setting_TelnetPort, -1 } },
-  #endif
-  #if BLUETOOTH_ENABLE
-    { 140, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "??", { Setting_BlueToothServiceName, -1 } },
-  #endif
-  #if WEBSOCKET_ENABLE
-    { 160, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set WebSocket state", { Setting_NetworkServices, 1 } },
-    { 161, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set WebSocket port", { Setting_WebSocketPort, -1 } },
-  #endif
-  #if FTP_ENABLE
-    { 180, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set FTP state", { Setting_NetworkServices, 3 } },
-    { 181, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set FTP port", { Setting_WebSocketPort, -1 } },
-  #endif
-#endif
-// Action commands
-#if FS_ENABLE & FS_SDCARD
-    { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
-    { 210, get_sd_content,     { WebUIAuth_User, WebUIAuth_Admin},  "??" },
-    { 220, sd_print,           { WebUIAuth_User, WebUIAuth_Admin},  "??" },
-#endif
-    { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
-    { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
-#if WIFI_ENABLE
-    { 410, get_ap_list,        { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display available AP list (limited to 30) in plain/JSON" },
-#endif
-    { 420, get_system_status,  { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display ESP3D current status in plain/JSON" },
-    { 444, set_cpu_state,      { WebUIAuth_Admin, WebUIAuth_Admin}, "<RESET|RESTART> - set ESP3D state" },
-#if FLASHFS_ENABLE
-    { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
-#endif
-#if FLASHFS_ENABLE
-    { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format local filesystem" },
-    { 720, flash_get_capacity, { WebUIAuth_User, WebUIAuth_Admin},  "??" },
-#endif
-    { 800, get_firmware_spec,  { WebUIAuth_Guest, WebUIAuth_Guest}, "(json=yes) - display FW Informations in plain/JSON" }
-};
-
-status_code_t webui_v2_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
-{
-    status_code_t status = Status_Unhandled;
-
-//  hal.delay_ms(100, NULL);
-
-    webui_trim_arg(&argc, argv, "pwd=");
-
-    webui_trim_arg(&argc, argv, "json");
-    webui_trim_arg(&argc, argv, "json=");
-
-    uint32_t i = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
-
-    while(i) {
-        if(webui_commands[--i].id == command) {
-#if xWEBUI_AUTH_ENABLE
-            if(auth_level < (argc == 0 ? webui_commands[i].auth.read : webui_commands[i].auth.execute)) {
-                if(json)
-                    json_write_response(json_create_response_hdr(webui_commands[i].id, false, true, NULL, "Wrong authentication level"), file);
-                else
-                    vfs_puts("Wrong authentication level" ASCII_EOL, file);
-
-                status = auth_level < WebUIAuth_User ? Status_AuthenticationRequired : Status_AccessDenied;
-            } else
-#endif
-            status = webui_commands[i].handler(&webui_commands[i], argc, argv, file);
-            i = 0;
-        }
-    }
-
-    return status;
-}
-
 // Shared functions
 
 static vfs_file_t *fwd_file;
@@ -220,26 +99,6 @@ static void stream_changed (stream_type_t type)
         hal.stream.write = pre_stream;
         pre_stream = NULL;
     }
-}
-
-static bool json_write_response (cJSON *json, vfs_file_t *file)
-{
-    bool ok = false;
-
-    if(json) {
-
-        char *resp = cJSON_PrintUnformatted(json);
-
-        if((ok = !!resp)) {
-            cJSON_Delete(json);
-            data_is_json();
-            vfs_puts(resp, file);
-            cJSON_free(resp);
-        } else
-            cJSON_Delete(json);
-    }
-
-    return ok;
 }
 
 static status_code_t sys_execute (char *cmd, vfs_file_t *file)
@@ -382,15 +241,14 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
 }
 
 // Add setting to the JSON response array
-static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fast16_t offset)
+static bool add_setting (json_out_t *jstream, setting_id_t id, int32_t bit, uint_fast16_t offset)
 {
     static const char *tmap2[] = { "B", "B", "B", "B", "I", "I", "B", "S", "S", "A", "I", "I" };
 
     bool ok;
-    cJSON *settingobj;
     const setting_detail_t *setting = setting_get_details(id, NULL);
 
-    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting, offset)) && !!(settingobj = cJSON_CreateObject())))
+    if((ok = setting && (setting->is_available == NULL || setting->is_available(setting, offset)) && json_start_object(jstream)))
     {
         char opt[50];
         const setting_group_detail_t *group = setting_get_group_details(setting->group);
@@ -400,17 +258,17 @@ static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fas
 
         strcpy(opt, group->name);
 
-        ok  = !!cJSON_AddStringToObject(settingobj, "F", "network");
+        ok  = json_add_string(jstream, "F", "network");
 
         strcpy(opt, uitoa(setting->id));
         if(bit >= 0) {
             strcat(opt, "#");
             strcat(opt, uitoa(bit));
         }
-        ok &= !!cJSON_AddStringToObject(settingobj, "P", opt);
-        ok &= !!cJSON_AddStringToObject(settingobj, "T", tmap2[setting->datatype]);
-        ok &= !!cJSON_AddStringToObject(settingobj, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
-        ok &= !!cJSON_AddStringToObject(settingobj, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name : strgetentry(opt, setting->format, bit, ','));
+        ok &= json_add_string(jstream, "P", opt);
+        ok &= json_add_string(jstream, "T", tmap2[setting->datatype]);
+        ok &= json_add_string(jstream, "V", bit == -1 ? setting_get_value(setting, offset) : setting_get_int_value(setting, offset) & (1 << bit) ? "1" : "0");
+        ok &= json_add_string(jstream, "H", bit == -1 || setting->datatype == Format_Bool ? setting->name : strgetentry(opt, setting->format, bit, ','));
 
         if(ok) switch(setting->datatype) {
 
@@ -419,23 +277,26 @@ static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fas
             case Format_XBitfield:
             case Format_RadioButtons:
                 {
-                    cJSON *option, *options = cJSON_AddArrayToObject(settingobj, "O");
-                    if(bit == -1) {
-                        uint32_t i, j = strnumentries(setting->format, ',');
-                        for(i = 0; i < j; i++) {
-                            option = cJSON_CreateObject();
-                            if(strcmp(strgetentry(opt, setting->format, i, ','), "N/A")) {
-                                cJSON_AddStringToObject(option, opt, uitoa(i));
-                                cJSON_AddItemToArray(options, option);
+                    if((ok = json_start_array(jstream, "O"))) {
+                        if(bit == -1) {
+                            uint32_t i, j = strnumentries(setting->format, ',');
+                            for(i = 0; i < j; i++) {
+                                if(strcmp(strgetentry(opt, setting->format, i, ','), "N/A")) {
+                                    if((ok = json_start_object(jstream))) {
+                                        ok = json_add_string(jstream, opt, uitoa(i));
+                                        json_end_object(jstream);
+                                    }
+                                }
+                            }
+                        } else {
+                            ok = json_add_string(jstream, "Enabled", "1");
+                            json_end_object(jstream);
+                            if((ok = json_start_object(jstream))) {
+                                ok = ok & json_add_string(jstream, "Disabled", "0");
+                                json_end_object(jstream);
                             }
                         }
-                    } else {
-                        option = cJSON_CreateObject();
-                        cJSON_AddStringToObject(option, "Enabled", "1");
-                        cJSON_AddItemToArray(options, option);
-                        option = cJSON_CreateObject();
-                        cJSON_AddStringToObject(option, "Disabled", "0");
-                        cJSON_AddItemToArray(options, option);
+                        json_end_array(jstream);
                     }
                 }
                 break;
@@ -445,15 +306,14 @@ static bool add_setting (cJSON *settings, setting_id_t id, int32_t bit, uint_fas
 
             default:
                 if(setting->min_value && !setting_is_list(setting))
-                    ok &= !!cJSON_AddStringToObject(settingobj, "M", setting->min_value);
+                    ok &= json_add_string(jstream, "M", setting->min_value);
                 if(setting->max_value)
-                    ok &= !!cJSON_AddStringToObject(settingobj, "S", setting->max_value);
+                    ok &= json_add_string(jstream, "S", setting->max_value);
                 break;
 
         }
 
-        if(ok)
-            cJSON_AddItemToArray(settings, settingobj);
+        ok = json_end_object(jstream);
     }
 
     return ok;
@@ -527,61 +387,57 @@ static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fas
 static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, vfs_file_t *file)
 {
     bool ok;
-    cJSON *root = cJSON_CreateObject(), *settings = NULL;
+    json_out_t *jstream = json_start(file, 10);
 
-    ok = root != NULL;
+    if((ok = jstream != NULL && json_start_array(jstream, "EEPROM"))) {
 
-    if((ok &= !!(settings = cJSON_AddArrayToObject(root, "EEPROM")))) {
-
-        add_setting(settings, Setting_Hostname, -1, 0);
+        add_setting(jstream, Setting_Hostname, -1, 0);
 #if HTTP_ENABLE
-        add_setting(settings, Setting_NetworkServices, 2, 0);
-        add_setting(settings, Setting_HttpPort, -1, 0);
+        add_setting(jstream, Setting_NetworkServices, 2, 0);
+        add_setting(jstream, Setting_HttpPort, -1, 0);
 #endif
 #if TELNET_ENABLE
-        add_setting(settings, Setting_NetworkServices, 0, 0);
-        add_setting(settings, Setting_TelnetPort, -1, 0);
+        add_setting(jstream, Setting_NetworkServices, 0, 0);
+        add_setting(jstream, Setting_TelnetPort, -1, 0);
 #endif
 #if WEBSOCKET_ENABLE
-        add_setting(settings, Setting_NetworkServices, 1, 0);
-        add_setting(settings, Setting_WebSocketPort, -1, 0);
+        add_setting(jstream, Setting_NetworkServices, 1, 0);
+        add_setting(jstream, Setting_WebSocketPort, -1, 0);
 #endif
 #if FTP_ENABLE
-        add_setting(settings, Setting_NetworkServices, 3, 0);
-        add_setting(settings, Setting_FtpPort, -1, 0);
+        add_setting(jstream, Setting_NetworkServices, 3, 0);
+        add_setting(jstream, Setting_FtpPort, -1, 0);
 #endif
-        add_setting(settings, Setting_IpMode, -1, 0);
-//        add_setting(settings, Setting_ReportInches, -1, 0);
+        add_setting(jstream, Setting_IpMode, -1, 0);
+//        add_setting(jstream, Setting_ReportInches, -1, 0);
 #if ETHERNET_ENABLE
-        add_setting(settings, Setting_IpAddress, -1, 0);
-        add_setting(settings, Setting_Gateway, -1, 0);
-        add_setting(settings, Setting_NetMask, -1, 0);
+        add_setting(jstream, Setting_IpAddress, -1, 0);
+        add_setting(jstream, Setting_Gateway, -1, 0);
+        add_setting(jstream, Setting_NetMask, -1, 0);
 #endif
 #if WIFI_ENABLE
-        add_setting(settings, Setting_WifiMode, -1, 0);
+        add_setting(jstream, Setting_WifiMode, -1, 0);
 
-        add_setting(settings, Setting_WiFi_STA_SSID, -1, 0);
-        add_setting(settings, Setting_WiFi_STA_Password, -1, 0);
-        add_setting(settings, Setting_IpMode, -1, 0);
-        add_setting(settings, Setting_IpAddress, -1, 0);
-        add_setting(settings, Setting_Gateway, -1, 0);
-        add_setting(settings, Setting_NetMask, -1, 0);
+        add_setting(jstream, Setting_WiFi_STA_SSID, -1, 0);
+        add_setting(jstream, Setting_WiFi_STA_Password, -1, 0);
+        add_setting(jstream, Setting_IpMode, -1, 0);
+        add_setting(jstream, Setting_IpAddress, -1, 0);
+        add_setting(jstream, Setting_Gateway, -1, 0);
+        add_setting(jstream, Setting_NetMask, -1, 0);
 
-        add_setting(settings, Setting_WiFi_AP_SSID, -1, 0);
-        add_setting(settings, Setting_WiFi_AP_Password, -1, 0);
-        add_setting(settings, Setting_IpAddress2, -1, 0);
+        add_setting(jstream, Setting_WiFi_AP_SSID, -1, 0);
+        add_setting(jstream, Setting_WiFi_AP_Password, -1, 0);
+        add_setting(jstream, Setting_IpAddress2, -1, 0);
 
 #endif
 #if BLUETOOTH_ENABLE
-//      add_setting(settings, Setting_WifiMode, -1, 0);
+//      add_setting(jstream, Setting_WifiMode, -1, 0);
 #endif
 
-        json_write_response(root, file);
-        root = NULL;
+        ok = ok & json_end_array(jstream);
+        if(ok && json_end(jstream))
+           data_is_json();
     }
-
-    if(root)
-        cJSON_Delete(root);
 
     return Status_OK;
 }
@@ -646,31 +502,27 @@ static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_
 
     if(ap_list && ap_list->ap_records) {
 
-        cJSON *root;
+        json_out_t *jstream;
 
-        if((root = cJSON_CreateObject())) {
+        if((jstream = json_start(file, 5))) {
 
-            cJSON *ap, *aps;
-
-            if((aps = cJSON_AddArrayToObject(root, "AP_LIST"))) {
+            if(json_start_array(jstream, "AP_LIST")) {
 
                 for(int i = 0; i < ap_list->ap_num; i++) {
-                    if((ok = !!(ap = cJSON_CreateObject())))
-                    {
-                        ok = !!cJSON_AddStringToObject(ap, "SSID", (char *)ap_list->ap_records[i].ssid);
-                        ok &= !!cJSON_AddNumberToObject(ap, "SIGNAL", (double)ap_list->ap_records[i].rssi);
-                        ok &= !!cJSON_AddStringToObject(ap, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
-                        if(ok)
-                            cJSON_AddItemToArray(aps, ap);
+                    if((ok = json_start_object(jstream))) {
+                        ok = json_add_string(jstream, "SSID", (char *)ap_list->ap_records[i].ssid);
+                        ok = ok & json_add_int(jstream, "SIGNAL", (int32_t)ap_list->ap_records[i].rssi);
+                        ok = ok & json_add_string(jstream, "IS_PROTECTED", ap_list->ap_records[i].authmode == WIFI_AUTH_OPEN ? "0" : "1");
+                        ok = ok & json_end_object(jstream);
                     }
                 }
-            }
 
-            if(ok)
-                json_write_response(root, file);
-            else
-                cJSON_Delete(root);
+                ok = ok & json_end_array(jstream);
+            }
         }
+
+        if(json_end(jstream))
+           data_is_json();
     }
 
     if(ap_list)
@@ -819,6 +671,101 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     vfs_puts(buf, file);
 
     return Status_OK;
+}
+
+static const webui_cmd_binding_t webui_commands[] = {
+// Settings commands
+#if WIFI_ENABLE
+    { 100, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set STA SSID", { Setting_WiFi_STA_SSID, -1 } },
+    { 101, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set STA password", { Setting_WiFi_STA_Password, -1 } },
+    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set STA IP mode", { Setting_IpMode, -1 } },
+    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set STA IP/Mask/GW", { 0, -1 } },
+    { 105, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set AP SSID", { Setting_WiFi_AP_SSID, -1 } },
+    { 106, esp_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "<password> - set AP password", { Setting_WiFi_AP_Password, -1 } },
+    { 107, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ipv4>) - display/set AP IP", { Setting_IpAddress2, -1 } },
+    { 108, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<channel>) - display/set AP channel", { Setting_Wifi_AP_Channel, -1 } },
+//  { 110, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "<BT|WIFI-STA|WIFI-AP|WIFI-SETUP|ETH-STA|OFF> - display/set radio state", { Setting_WifiMode, -1 } },
+#elif ETHERNET_ENABLE
+    { 102, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<DHCP|STATIC>) - display/set Ethernet IP mode", { Setting_IpMode, -1 } },
+    { 103, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(IP=<ipv4> MSK=<ipv4> GW=<ipv4>) - display/set Ethernet IP/Mask/GW", { 0, -1 } },
+#endif
+#if WIFI_ENABLE || ETHERNET_ENABLE
+    { 111, get_current_ip,     { WebUIAuth_Guest, WebUIAuth_Admin}, "- display current IP" },
+    { 112, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<hostname>) - display/set Hostname", { Setting_Hostname, -1 } },
+  #if HTTP_ENABLE
+    { 120, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set HTTP state", { Setting_NetworkServices, 2 } },
+    { 121, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set HTTP port", { Setting_HttpPort, -1 } },
+  #endif
+  #if TELNET_ENABLE
+    { 130, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set Telnet state", { Setting_NetworkServices, 0 } },
+    { 131, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set Telnet port", { Setting_TelnetPort, -1 } },
+  #endif
+  #if BLUETOOTH_ENABLE
+    { 140, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "??", { Setting_BlueToothServiceName, -1 } },
+  #endif
+  #if WEBSOCKET_ENABLE
+    { 160, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set WebSocket state", { Setting_NetworkServices, 1 } },
+    { 161, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set WebSocket port", { Setting_WebSocketPort, -1 } },
+  #endif
+  #if FTP_ENABLE
+    { 180, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ON|OFF>) - display/set FTP state", { Setting_NetworkServices, 3 } },
+    { 181, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<port>) - display/set FTP port", { Setting_WebSocketPort, -1 } },
+  #endif
+#endif
+// Action commands
+#if FS_ENABLE & FS_SDCARD
+    { 200, get_sd_status,      { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) (<RELEASE|REFRESH>) - display/set SD Card Status" },
+    { 210, get_sd_content,     { WebUIAuth_User, WebUIAuth_Admin},  "??" },
+    { 220, sd_print,           { WebUIAuth_User, WebUIAuth_Admin},  "??" },
+#endif
+    { 400, get_settings,       { WebUIAuth_User, WebUIAuth_Admin},  " - display ESP3D settings in JSON" },
+    { 401, set_setting,        { WebUIAuth_Admin, WebUIAuth_Admin}, "P=<setting id> T=<type> V=<value> - set specific setting" },
+#if WIFI_ENABLE
+    { 410, get_ap_list,        { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display available AP list (limited to 30) in plain/JSON" },
+#endif
+    { 420, get_system_status,  { WebUIAuth_User, WebUIAuth_Admin},  "(json=yes) - display ESP3D current status in plain/JSON" },
+    { 444, set_cpu_state,      { WebUIAuth_Admin, WebUIAuth_Admin}, "<RESET|RESTART> - set ESP3D state" },
+#if FLASHFS_ENABLE
+    { 700, flash_read_file,    { WebUIAuth_User, WebUIAuth_Admin},  "<filename> - read local filesystem file" },
+#endif
+#if FLASHFS_ENABLE
+    { 710, flash_format,       { WebUIAuth_Admin, WebUIAuth_Admin}, "FORMATFS - format local filesystem" },
+    { 720, flash_get_capacity, { WebUIAuth_User, WebUIAuth_Admin},  "??" },
+#endif
+    { 800, get_firmware_spec,  { WebUIAuth_Guest, WebUIAuth_Guest}, "(json=yes) - display FW Informations in plain/JSON" }
+};
+
+status_code_t webui_v2_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
+{
+    status_code_t status = Status_Unhandled;
+
+//  hal.delay_ms(100, NULL);
+
+    webui_trim_arg(&argc, argv, "pwd=");
+
+    webui_trim_arg(&argc, argv, "json");
+    webui_trim_arg(&argc, argv, "json=");
+
+    uint32_t i = sizeof(webui_commands) / sizeof(webui_cmd_binding_t);
+
+    while(i) {
+        if(webui_commands[--i].id == command) {
+#if xWEBUI_AUTH_ENABLE
+            if(auth_level < (argc == 0 ? webui_commands[i].auth.read : webui_commands[i].auth.execute)) {
+                if(json)
+                    json_write_response(json_create_response_hdr(webui_commands[i].id, false, true, NULL, "Wrong authentication level"), file);
+                else
+                    vfs_puts("Wrong authentication level" ASCII_EOL, file);
+
+                status = auth_level < WebUIAuth_User ? Status_AuthenticationRequired : Status_AccessDenied;
+            } else
+#endif
+            status = webui_commands[i].handler(&webui_commands[i], argc, argv, file);
+            i = 0;
+        }
+    }
+
+    return status;
 }
 
 #endif // WEBUI_ENABLE
