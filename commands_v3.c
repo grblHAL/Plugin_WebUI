@@ -924,7 +924,7 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
             }
 
 #if WEBUI_AUTH_ENABLE
-            ok = ok & json_add_value(data, "authentication", "ON");
+            ok = ok & json_add_value(jstream, "authentication", "ON");
 #endif
 //            ok = ok & json_add_value(data, "flash", "OFF");
             if(sdfs)
@@ -1587,7 +1587,7 @@ status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, ch
 #if WEBUI_AUTH_ENABLE
             if(auth_level < (argc == 0 ? webui_commands[i].auth.read : webui_commands[i].auth.execute)) {
                 if(json) {
-                    if(json_end(json_create_response_hdr(webui_commands[i].id, ResponseHdrType_MSG, true, "Wrong authentication level"))
+                    if(json_end(json_create_response_hdr(webui_commands[i].id, ResponseHdrType_MSG, true, "Wrong authentication level", file)))
                         data_is_json();
                 } else
                     vfs_puts("Wrong authentication level" ASCII_EOL, file);
