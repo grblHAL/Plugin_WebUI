@@ -408,6 +408,13 @@ static const char *command (http_request_t *request)
         size_t len;
         char c, *block = strtok(data, "\n");
 
+        if(grbl.on_user_command) {
+            if(grbl.on_user_command(data) != Status_Unhandled) {
+                busy = false;
+                return "/stream/qry.txt";
+            }
+        }
+
         while(block) {
 
             if((len = strlen(block)) == 2 && *block == 0xC2) {
@@ -838,7 +845,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.27");
+        report_plugin("WebUI", "0.28");
 }
 
 void webui_init (void)

@@ -288,7 +288,7 @@ static bool add_setting (json_out_t *jstream, setting_id_t id, int32_t bit, uint
                                     }
                                 }
                             }
-                        } else {
+                        } else if((ok = json_start_object(jstream))) {
                             ok = json_add_string(jstream, "Enabled", "1");
                             json_end_object(jstream);
                             if((ok = json_start_object(jstream))) {

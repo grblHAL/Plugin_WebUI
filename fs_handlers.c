@@ -330,12 +330,14 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 
 const char *fs_download_handler (http_request_t *request, vfs_drive_t *drive)
 {
-    static char path[256] = "";
+    static char path[256];
 
     if(drive == NULL) {
         http_set_response_status(request, "404 Not Found");
         return NULL;
     }
+
+    *path = '\0';
 
     if(strlen(drive->path) > 1 || *drive->path != '/')
         strcat(strcpy(path, drive->path), "/");
