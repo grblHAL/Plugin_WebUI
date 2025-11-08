@@ -1435,7 +1435,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     return Status_OK;
 }
 
-static const webui_cmd_binding_t webui_commands[] = {
+PROGMEM static const webui_cmd_binding_t webui_commands[] = {
     { 0,   list_commands,      { WebUIAuth_Guest, WebUIAuth_None},  "(<command id>) - display this help" },
 // Settings commands
 #if WIFI_ENABLE

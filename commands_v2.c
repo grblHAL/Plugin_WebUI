@@ -673,7 +673,7 @@ static status_code_t get_firmware_spec (const struct webui_cmd_binding *command,
     return Status_OK;
 }
 
-static const webui_cmd_binding_t webui_commands[] = {
+PROGMEM static const webui_cmd_binding_t webui_commands[] = {
 // Settings commands
 #if WIFI_ENABLE
     { 100, esp_setting,        { WebUIAuth_Guest, WebUIAuth_Admin}, "(<ssid>) - display/set STA SSID", { Setting_WiFi_STA_SSID, -1 } },

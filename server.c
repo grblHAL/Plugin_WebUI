@@ -254,7 +254,7 @@ static const char *command (http_request_t *request)
             return NULL;
         }
 
-        status_code_t status;
+        status_code_t status = Status_Unhandled;
 
         cmd += 4;
 
@@ -873,7 +873,7 @@ void webui_init (void)
 
 #if WEBUI_ENABLE == 1 // All WebUI versions supported
 
-    static const httpd_uri_handler_t cgi[] = {
+    PROGMEM static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
   #if FS_ENABLE & FS_SDCARD
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
@@ -907,7 +907,7 @@ void webui_init (void)
 
 #elif WEBUI_ENABLE == 2 // WebUI v2
 
-    static const httpd_uri_handler_t cgi[] = {
+    PROGMEM static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
   #if FS_ENABLE & FS_SDCARD
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
@@ -940,7 +940,7 @@ void webui_init (void)
 
 #else // WebUI v3
 
-    static const httpd_uri_handler_t cgi[] = {
+    PROGMEM static const httpd_uri_handler_t cgi[] = {
         { .uri = "/command",  .method = HTTP_Get,     .handler = command },
   #if FS_ENABLE & FS_SDCARD
         { .uri = "/upload",   .method = HTTP_Get,     .handler = sdcard_handler },
