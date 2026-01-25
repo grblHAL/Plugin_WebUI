@@ -33,10 +33,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#ifndef CRLF
-#define CRLF "\r\n"
-#endif
-
 #include "webui.h"
 
 #include "networking/httpd.h"
@@ -203,7 +199,7 @@ static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, v
         if(json_end(root))
            data_is_json();
 
-        http_set_rom_response_header(request, "Cache-Control: no-cache" CRLF);
+        http_set_rom_response_header(request, "Cache-Control: no-cache" HTTP_EOL);
     }
 
     return ok;

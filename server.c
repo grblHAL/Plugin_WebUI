@@ -30,10 +30,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#ifndef CRLF
-#define CRLF "\r\n"
-#endif
-
 #include "networking/websocketd.h"
 #include "networking/networking.h"
 #include "networking/utils.h"
@@ -237,7 +233,7 @@ static const char *command (http_request_t *request)
         http_get_param_value(request, "plain", data, sizeof(data));
 #endif
 
-    http_set_rom_response_header(request, "Cache-Control: no-cache" CRLF);
+    http_set_rom_response_header(request, "Cache-Control: no-cache" HTTP_EOL);
 
     if(ping) {
 
@@ -528,8 +524,8 @@ static const char *wifi_scan_handler (http_request_t *request)
             if(ok) {
                 char *resp = cJSON_PrintUnformatted(root);
 #if xCORS_ENABLE
-                http_set_rom_response_header(req, "Access-Control-Allow-Origin: *");
-                http_set_rom_response_header(req, "Access-Control-Allow-Methods: POST,GET,OPTIONS");
+                http_set_rom_response_header(req, "Access-Control-Allow-Origin: *" HTTP_EOL);
+                http_set_rom_response_header(req, "Access-Control-Allow-Methods: POST,GET,OPTIONS" HTTP_EOL);
 #endif
                 vfs_file_t *file = vfs_open("/ram/data.json", "w");
                 vfs_puts(resp, file);
@@ -662,9 +658,9 @@ static const char *wifi_disconnect_handler (http_request_t *request)
 #if CORS_ENABLE
 static const char *wifi_options_handler (http_request_t *req)
 {
-    http_set_rom_response_header(req, "Access-Control-Allow-Origin: *");
-    http_set_rom_response_header(req, "Access-Control-Request-Headers: *");
-    http_set_rom_response_header(req, "Access-Control-Allow-Methods: HEAD,GET,POST,DELETE,OPTIONS");
+    http_set_rom_response_header(req, "Access-Control-Allow-Origin: *" HTTP_EOL);
+    http_set_rom_response_header(req, "Access-Control-Request-Headers: *" HTTP_EOL);
+    http_set_rom_response_header(req, "Access-Control-Allow-Methods: HEAD,GET,POST,DELETE,OPTIONS" HTTP_EOL);
 
     return wifi_scan_handler(req);
 }

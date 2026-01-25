@@ -32,10 +32,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifndef CRLF
-#define CRLF "\r\n"
-#endif
-
 #include "grbl/vfs.h"
 #include "grbl/strutils.h"
 #include "grbl/nvs_buffer.h"
@@ -315,7 +311,7 @@ static const char *login (login_form_data_t *login)
         http_set_response_status(login->request, paranoia);
     }
 
-    http_set_rom_response_header(login->request, "Cache-Control: no-cache" CRLF);
+    http_set_rom_response_header(login->request, "Cache-Control: no-cache" HTTP_EOL);
 
     webui_auth_level_t current_level = get_auth_level(login->request);
 
