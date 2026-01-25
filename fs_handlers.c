@@ -199,7 +199,7 @@ static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, v
         if(json_end(root))
            data_is_json();
 
-        http_set_response_header(request, "Cache-Control", "no-cache");
+        http_set_rom_response_header(request, "Cache-Control: no-cache");
     }
 
     return ok;

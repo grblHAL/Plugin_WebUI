@@ -2,10 +2,10 @@
   server.c - An embedded CNC Controller with rs274/ngc (g-code) support
 
   WebUI backend for https://github.com/luc-github/ESP3D-webui
-
+/
   Part of grblHAL
 
-  Copyright (c) 2019-2025 Terje Io
+  Copyright (c) 2019-2026 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,7 +36,6 @@
 #include "networking/cJSON.h"
 #include "networking/http_upload.h"
 #include "networking/fs_ram.h"
-#include "networking/fs_stream.h"
 #if SSDP_ENABLE
 #include "networking/ssdp.h"
 #endif
@@ -61,7 +60,7 @@
 #if ESP_PLATFORM
 #include "../esp_webui/fs_spiffs.h"
 #include "../esp_webui/fs_embedded.h"
-#elif WEBUI_INFLASH
+#else
 #include "fs_embedded.h"
 #endif
 
@@ -234,7 +233,7 @@ static const char *command (http_request_t *request)
         http_get_param_value(request, "plain", data, sizeof(data));
 #endif
 
-    http_set_response_header(request, "Cache-Control", "no-cache");
+    http_set_rom_response_header(request, "Cache-Control: no-cache");
 
     if(ping) {
 
@@ -411,7 +410,7 @@ static const char *command (http_request_t *request)
         if(grbl.on_user_command) {
             if(grbl.on_user_command(data) != Status_Unhandled) {
                 busy = false;
-                return "/stream/qry.txt";
+                return "/ram/qry.txt";
             }
         }
 
@@ -432,18 +431,9 @@ static const char *command (http_request_t *request)
         }
     }
 
-    if((file = vfs_open("/stream/qry.txt", "w")) == NULL) {
-        busy = false;
-        http_set_response_status(request, "500 Internal Server Error");
-        return NULL;
-    }
-
-    vfs_puts("ok", file);
-    vfs_close(file);
-
     busy = false;
 
-    return "/stream/qry.txt";
+    return "/embedded/ok.txt";
 }
 
 #if WIFI_ENABLE && WIFI_SOFTAP
@@ -534,8 +524,8 @@ static const char *wifi_scan_handler (http_request_t *request)
             if(ok) {
                 char *resp = cJSON_PrintUnformatted(root);
 #if xCORS_ENABLE
-                http_set_response_header(req, "Access-Control-Allow-Origin", "*");
-                http_set_response_header(req, "Access-Control-Allow-Methods", "POST,GET,OPTIONS");
+                http_set_rom_response_header(req, "Access-Control-Allow-Origin: *");
+                http_set_rom_response_header(req, "Access-Control-Allow-Methods: POST,GET,OPTIONS");
 #endif
                 vfs_file_t *file = vfs_open("/ram/data.json", "w");
                 vfs_puts(resp, file);
@@ -666,11 +656,11 @@ static const char *wifi_disconnect_handler (http_request_t *request)
 }
 
 #if CORS_ENABLE
-static esp_err_t wifi_options_handler (httpd_req_t *req)
+static const char *wifi_options_handler (http_request_t *req)
 {
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_set_hdr(req, "Access-Control-Request-Headers", "*");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    http_set_rom_response_header(req, "Access-Control-Allow-Origin: *");
+    http_set_rom_response_header(req, "Access-Control-Request-Headers: *");
+    http_set_rom_response_header(req, "Access-Control-Allow-Methods: HEAD,GET,POST,DELETE,OPTIONS");
 
     return wifi_scan_handler(req);
 }
@@ -845,7 +835,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.28");
+        report_plugin("WebUI", "0.29");
 }
 
 void webui_init (void)
@@ -976,14 +966,7 @@ void webui_init (void)
     httpd_register_uri_handlers(cgi, sizeof(cgi) / sizeof(httpd_uri_handler_t));
 
     fs_ram_mount();
-    fs_stream_mount();
-
-#if WEBUI_INFLASH || ESP_PLATFORM
     fs_embedded_mount();
-#endif
-#if xESP_PLATFORM
-    fs_spiffs_mount();
-#endif
 }
 
 #endif // WEBUI_ENABLE

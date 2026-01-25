@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2022-2024 Terje Io
+  Copyright (c) 2022-2026 Terje Io
 
   Some parts of the code is based on test code by francoiscolas
   https://github.com/francoiscolas/multipart-parser/blob/master/tests.cpp
@@ -36,8 +36,8 @@
 #include "grbl/strutils.h"
 #include "grbl/nvs_buffer.h"
 #include "grbl/protocol.h"
+#include "grbl/stream_json.h"
 
-#include "networking/cJSON.h"
 #include "networking/multipartparser.h"
 #include "networking/utils.h"
 
@@ -217,7 +217,6 @@ static const char *login (login_form_data_t *login)
     char msg[40] = "Ok", cookie[64];
     uint32_t status = 200;
     webui_auth_level_t auth_level = WebUIAuth_None;
-    cJSON *root;
 
     switch(login->action) {
 
@@ -312,7 +311,7 @@ static const char *login (login_form_data_t *login)
         http_set_response_status(login->request, paranoia);
     }
 
-    http_set_response_header(login->request, "Cache-Control", "no-cache");
+    http_set_rom_response_header(login->request, "Cache-Control: no-cache");
 
     webui_auth_level_t current_level = get_auth_level(login->request);
 
@@ -342,25 +341,17 @@ static const char *login (login_form_data_t *login)
         }
     }
 
-    if((root = cJSON_CreateObject())) {
+    json_out_t *jstream;
+    vfs_file_t *file = vfs_open("/ram/data.json", "w");
 
-        ok = cJSON_AddStringToObject(root, "status", msg) != NULL;
-        ok &= !!cJSON_AddStringToObject(root, "authentication_lvl", authleveltostr(auth_level));
-
-        if(ok) {
-            char *resp = cJSON_PrintUnformatted(root);
-            vfs_file_t *file = vfs_open("/stream/data.json", "w");
-            hal.stream.write(resp);
-            vfs_close(file);
-
-            free(resp);
-        }
-
-        if(root)
-            cJSON_Delete(root);
+    if((jstream = json_start(file, 2))) {
+        ok = json_add_string(jstream, "status", msg);
+        ok = ok & json_add_string(jstream, "authentication_lvl", authleveltostr(auth_level));
+        ok = ok & json_end(jstream);
+        vfs_close(file);
     }
 
-    return ok ? "/stream/data.json" : NULL;
+    return ok ? "/ram/data.json" : NULL;
 }
 
 static void cleanup (void *form)

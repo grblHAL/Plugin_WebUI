@@ -5,7 +5,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2022-2023 Terje Io
+  Copyright (c) 2022-2026 Terje Io
 
   File data is extracted from files Copyright (c) 2021 Luc Lebosse
   https://github.com/luc-github/ESP3D-webui
@@ -26,12 +26,18 @@
 
 #include "driver.h"
 
-#if WEBUI_INFLASH
-
 #include <stdlib.h>
 #include <string.h>
 
 #include "grbl/vfs.h"
+
+PROGMEM static const embedded_file_t ok_txt = {
+    .name = "ok.txt",
+    .size = 2,
+    .data = { 'o', 'k' }
+};
+
+#if WEBUI_INFLASH
 
 PROGMEM static const embedded_file_t favicon_ico = {
     .name = "favicon.ico",
@@ -812,6 +818,8 @@ PROGMEM static const embedded_file_t index_html_gz = {
               87, 222, 251, 255, 23, 140, 158, 73, 30, 48, 143, 0, 0 }
 };
 
+#endif // WEBUI_INFLASH
+
 #if WIFI_SOFTAP
 
 PROGMEM static const embedded_file_t ap_login_html = {
@@ -1052,7 +1060,7 @@ PROGMEM static const embedded_file_t ap_login_html = {
               111, 100, 121, 62, 13, 10, 60, 47, 104, 116, 109, 108, 62, 13, 10 }
 };
 
-#endif
+#endif // WIFI_SOFTAP
 
 typedef struct {
     const embedded_file_t *file;
@@ -1061,8 +1069,11 @@ typedef struct {
 
 // Array of pointers to files, NULL terminated
 static const embedded_file_t *ro_files[] = {
+    &ok_txt,
+#if WEBUI_INFLASH
     &favicon_ico,
     &index_html_gz,
+#endif
 #if WIFI_SOFTAP
     &ap_login_html,
 #endif
@@ -1206,5 +1217,3 @@ void fs_embedded_mount (void)
 
     vfs_mount("/embedded", &fs, (vfs_st_mode_t){ .directory = true, .read_only = true, .hidden = true });
 }
-
-#endif
