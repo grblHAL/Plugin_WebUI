@@ -30,6 +30,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#ifndef CRLF
+#define CRLF "\r\n"
+#endif
+
 #include "networking/websocketd.h"
 #include "networking/networking.h"
 #include "networking/utils.h"
@@ -233,7 +237,7 @@ static const char *command (http_request_t *request)
         http_get_param_value(request, "plain", data, sizeof(data));
 #endif
 
-    http_set_rom_response_header(request, "Cache-Control: no-cache");
+    http_set_rom_response_header(request, "Cache-Control: no-cache" CRLF);
 
     if(ping) {
 
