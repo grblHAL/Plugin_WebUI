@@ -601,7 +601,7 @@ static bool add_setting (json_out_t *jstream, const setting_detail_t *setting, i
                     uint_fast16_t i;
 
                     if((ok = json_start_array(jstream, "O"))) {
-                        for(i = 0; ok && i < N_AXIS; i++) {
+                        for(i = 0; ok && i < system_n_axis(); i++) {
                             if((ok = json_start_object(jstream))) {
                                 ok = ok & json_add_string(jstream, axis_letter[i], uitoa(i));
                                 json_end_object(jstream);

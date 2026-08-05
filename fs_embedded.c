@@ -1199,6 +1199,7 @@ static int fs_stat (const char *filename, vfs_stat_t *st)
 void fs_embedded_mount (void)
 {
     PROGMEM static const vfs_t fs = {
+        .fs_name = "embedded",
         .fopen = fs_open,
         .fclose = fs_close,
         .fread = fs_read,

@@ -93,8 +93,10 @@ static int sd_scan_dir (json_out_t *files, char *path, uint_fast8_t depth)
     vfs_stat_t st;
 #endif
 
-    if((dir = vfs_opendir(path)) == NULL)
+    if((dir = vfs_opendir(path)) == NULL) {
+        json_end_array(files);
         return vfs_errno;
+    }
 
    // Pass 1: Scan files
     while(scan) {
@@ -450,7 +452,7 @@ vfs_drive_t *fs_get_root_drive (void)
     if((dh = vfs_drives_open()))
     {
         while((drive = vfs_drives_read(dh, true))) {
-            if(!strcmp(drive->name, "/")) {
+            if(!strcmp(drive->path, "/")) {
                 memcpy(&root, drive, sizeof(vfs_drive_t));
                 break;
             }
@@ -492,7 +494,7 @@ vfs_drive_t *fs_get_flash_drive (bool add_hidden)
     if((dh = vfs_drives_open()))
     {
         while((drive = vfs_drives_read(dh, add_hidden))) {
-            if(!(drive->removable || drive->mode.read_only)) {
+            if(!(drive->removable || drive->mode.read_only || !strcmp(drive->name, "RAM"))) {
                 memcpy(&flash, drive, sizeof(vfs_drive_t));
                 break;
             } else

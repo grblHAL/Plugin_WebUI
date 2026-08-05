@@ -35,7 +35,6 @@
 #include "networking/utils.h"
 #include "networking/cJSON.h"
 #include "networking/http_upload.h"
-#include "networking/fs_ram.h"
 #if SSDP_ENABLE
 #include "networking/ssdp.h"
 #endif
@@ -65,6 +64,7 @@
 #endif
 
 #include "grbl/vfs.h"
+#include "grbl/fs_ram.h"
 #include "grbl/task.h"
 #include "grbl/strutils.h"
 #include "grbl/stream_file.h"
@@ -247,7 +247,7 @@ static const char *command (http_request_t *request)
 
     if((cmd = strstr(data, "[ESP"))) {
 
-        if((file = vfs_open("/ram/qry", "w")) == NULL) {
+        if((file = vfs_open("/ram/qry.json", "w")) == NULL) {
             busy = false;
             http_set_response_status(request, "500 Internal Server Error");
             return NULL;
@@ -384,6 +384,8 @@ static const char *command (http_request_t *request)
         }
 
         vfs_close(file);
+        if(!file_is_json)
+            vfs_rename("/ram/qry.json", "/ram/qry.txt");
         busy = false;
 
         return file_is_json ? "/ram/qry.json" : "/ram/qry.txt";
@@ -742,7 +744,7 @@ static const char *config_handler_get (http_request_t *request)
     if(http_get_param_value(request, "json", data, sizeof(data)))
         is_json = *data == 'y';
 
-    if((file = vfs_open("/ram/qry", "w")) == NULL) {
+    if((file = vfs_open(is_json ? "/ram/qry.json" : "/ram/qry.txt", "w")) == NULL) {
         http_set_response_status(request, "500 Internal Server Error");
         return NULL;
     }
@@ -835,7 +837,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.29");
+        report_plugin("WebUI", "0.30");
 }
 
 void webui_init (void)
