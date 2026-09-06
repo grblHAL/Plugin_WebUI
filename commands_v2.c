@@ -90,12 +90,12 @@ static void stream_forward (const char *s)
     vfs_puts(s, fwd_file);
 }
 
-static void stream_changed (stream_type_t type)
+static void stream_changed (void)
 {
     if(on_stream_changed)
-        on_stream_changed(type);
+        on_stream_changed();
 
-    if(type != StreamType_File && hal.stream.write == stream_forward) {
+    if(!stream_is_file() && hal.stream.write == stream_forward) {
         hal.stream.write = pre_stream;
         pre_stream = NULL;
     }
@@ -349,7 +349,7 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
         msg = argc ? "Unknown parameter" : (release ? "SD card released" : "SD card ok");
 
     } else
-        msg = hal.stream.type == StreamType_File ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
+        msg = stream_is_file() ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
 
     vfs_puts(msg, file);
     vfs_puts(WEBUI_EOL, file);
@@ -370,7 +370,7 @@ static status_code_t sd_print (const struct webui_cmd_binding *command, uint_fas
 {
     status_code_t status = Status_IdleError;
 
-    if(hal.stream.type != StreamType_File) { // Already streaming a file?
+    if(stream_is_file()) { // Already streaming a file?
         char *cmd = webui_get_arg(argc, argv, NULL);
         if(strlen(cmd) > 0)
             status = stream_file(state_get(), cmd);

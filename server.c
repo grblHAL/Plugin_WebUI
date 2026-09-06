@@ -837,7 +837,7 @@ static void webui_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.30");
+        report_plugin("WebUI", "0.31");
 }
 
 void webui_init (void)

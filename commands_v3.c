@@ -448,7 +448,7 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
         msg = argc ? "Unknown parameter" : (release ? "SD card released" : "SD card ok");
 
     } else
-        msg = hal.stream.type == StreamType_SDCard ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
+        msg = stream_is_file() ? "Busy" : (sdcard_getfs() ? "SD card detected" : "Not available");
 #else
     char *msg = "Not available";
 #endif
@@ -1155,7 +1155,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
 
     if(cmd == NULL || strlen(cmd) == 0)
         strcpy(msg, "Missing parameter");
-    else if(hal.stream.type == StreamType_File)
+    else if(stream_is_file())
         strcpy(msg, "Streaming already in progress");
     else if(drive) {
         char path[256];
