@@ -115,7 +115,7 @@ static status_code_t sys_execute (char *cmd, vfs_file_t *file)
     hal.stream.write = stream_forward;
 
     strcpy(syscmd, cmd);
-    status = system_execute_line(syscmd);
+    status = system_execute_line(syscmd, hal.stream.write);
 
     if(pre_stream) {
         hal.stream.write = pre_stream;
@@ -482,7 +482,7 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
         if(ok) {
             status = Status_OK;
             sprintf(fcmd, "$%s=%s", setting_id, value);
-            status = system_execute_line(fcmd);
+            status = system_execute_line(fcmd, hal.stream.write);
         }
     }
 
