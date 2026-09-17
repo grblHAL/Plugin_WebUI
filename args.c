@@ -27,7 +27,7 @@
 
 #include "grbl/nuts_bolts.h"
 
-char *webui_get_arg (uint_fast16_t argc, char **argv, char *arg)
+FLASHMEM char *webui_get_arg (uint_fast16_t argc, char **argv, char *arg)
 {
     char *value = NULL;
     size_t len = arg ? strlen(arg) : 0;
@@ -44,7 +44,7 @@ char *webui_get_arg (uint_fast16_t argc, char **argv, char *arg)
     return value;
 }
 
-bool webui_get_bool_arg (uint_fast16_t argc, char **argv, char *arg)
+FLASHMEM bool webui_get_bool_arg (uint_fast16_t argc, char **argv, char *arg)
 {
     char *value = webui_get_arg(argc, argv, arg);
 
@@ -60,7 +60,7 @@ bool webui_get_bool_arg (uint_fast16_t argc, char **argv, char *arg)
     return value != NULL && (!strcmp(value, "YES") || !strcmp(value, "TRUE") || !strcmp(value, "1"));
 }
 
-void webui_trim_arg (uint_fast16_t *argc, char **argv, char *arg)
+FLASHMEM void webui_trim_arg (uint_fast16_t *argc, char **argv, char *arg)
 {
     char *found = NULL;
     size_t len = strlen(arg);

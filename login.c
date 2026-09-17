@@ -91,7 +91,7 @@ static setting_details_t details = {
     .restore = webui_settings_restore
 };
 
-static void webui_settings_restore (void)
+FLASHMEM static void webui_settings_restore (void)
 {
     strcpy(webui.admin_password, "admin");
     strcpy(webui.user_password, "user");
@@ -101,7 +101,7 @@ static void webui_settings_restore (void)
     hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&webui, sizeof(webui_settings_t), true);
 }
 
-static void webui_auto_report (void *data)
+FLASHMEM static void webui_auto_report (void *data)
 {
     if(webui.report_interval)
         task_add_delayed(webui_auto_report, NULL, webui.report_interval);
@@ -110,7 +110,7 @@ static void webui_auto_report (void *data)
         protocol_enqueue_realtime_command(CMD_STATUS_REPORT);
 }
 
-static void webui_settings_load (void)
+FLASHMEM static void webui_settings_load (void)
 {
     if(hal.nvs.memcpy_from_nvs((uint8_t *)&webui, nvs_address, sizeof(webui_settings_t), true) != NVS_TransferResult_OK)
         webui_settings_restore();
@@ -135,7 +135,7 @@ static webui_auth_t *sessions = NULL;
 static struct multipartparser parser;
 static struct multipartparser_callbacks *login_callbacks = NULL;
 
-static session_id_t *create_session_id (ip_addr_t ip, uint16_t port)
+FLASHMEM static session_id_t *create_session_id (ip_addr_t ip, uint16_t port)
 {
     static session_id_t session_id;
 
@@ -149,7 +149,7 @@ static session_id_t *create_session_id (ip_addr_t ip, uint16_t port)
     return &session_id;
 }
 
-static session_id_t *get_session_id (http_request_t *req, session_id_t *session_id)
+FLASHMEM static session_id_t *get_session_id (http_request_t *req, session_id_t *session_id)
 {
     char *cookie = NULL, *token = NULL, *end = NULL;;
     int len = http_get_header_value_len(req, "Cookie");
@@ -174,7 +174,7 @@ static session_id_t *get_session_id (http_request_t *req, session_id_t *session_
     return token ? session_id : NULL;
 }
 
-static bool unlink_session (http_request_t *req)
+FLASHMEM static bool unlink_session (http_request_t *req)
 {
     bool ok = false;
     session_id_t session_id;
@@ -206,12 +206,12 @@ static bool unlink_session (http_request_t *req)
     return ok;
 }
 
-static char *authleveltostr (webui_auth_level_t level)
+FLASHMEM static char *authleveltostr (webui_auth_level_t level)
 {
     return level == WebUIAuth_None ? "???" : level == WebUIAuth_Guest ? "guest" : level == WebUIAuth_User ? "user" : "admin";
 }
 
-static const char *login (login_form_data_t *login)
+FLASHMEM static const char *login (login_form_data_t *login)
 {
     bool ok = true;
     char msg[40] = "Ok", cookie[64];
@@ -341,31 +341,33 @@ static const char *login (login_form_data_t *login)
         }
     }
 
+    vfs_file_t *file;
     json_out_t *jstream;
-    vfs_file_t *file = vfs_open("/ram/data.json", "w");
 
-    if((jstream = json_start(file, 2))) {
+    if((ok = !!(jstream = json_start((file = vfs_open("/ram/data.json", "w")), 2)))) {
         ok = json_add_string(jstream, "status", msg);
         ok = ok & json_add_string(jstream, "authentication_lvl", authleveltostr(auth_level));
         ok = ok & json_end(jstream);
-        vfs_close(file);
     }
+
+    if(file)
+        vfs_close(file);
 
     return ok ? "/ram/data.json" : NULL;
 }
 
-static void cleanup (void *form)
+FLASHMEM static void cleanup (void *form)
 {
     if(form)
         free(form);
 }
 
-static int on_body_begin (struct multipartparser *parser)
+FLASHMEM static int on_body_begin (struct multipartparser *parser)
 {
     return 0;
 }
 
-static int on_part_begin (struct multipartparser *parser)
+FLASHMEM static int on_part_begin (struct multipartparser *parser)
 {
     login_form_data_t *form = (login_form_data_t *)parser->data;
 
@@ -375,7 +377,7 @@ static int on_part_begin (struct multipartparser *parser)
     return 0;
 }
 
-static void on_header_done (struct multipartparser *parser)
+FLASHMEM static void on_header_done (struct multipartparser *parser)
 {
     login_form_data_t *form = (login_form_data_t *)parser->data;
 
@@ -404,7 +406,7 @@ static void on_header_done (struct multipartparser *parser)
     }
 }
 
-static int on_header_field (struct multipartparser *parser, const char *data, size_t size)
+FLASHMEM static int on_header_field (struct multipartparser *parser, const char *data, size_t size)
 {
     login_form_data_t *form = (login_form_data_t *)parser->data;
 
@@ -417,7 +419,7 @@ static int on_header_field (struct multipartparser *parser, const char *data, si
     return 0;
 }
 
-static int on_header_value (struct multipartparser *parser, const char *data, size_t size)
+FLASHMEM static int on_header_value (struct multipartparser *parser, const char *data, size_t size)
 {
     login_form_data_t *form = (login_form_data_t *)parser->data;
 
@@ -427,7 +429,7 @@ static int on_header_value (struct multipartparser *parser, const char *data, si
     return 0;
 }
 
-static int on_headers_complete (struct multipartparser *parser)
+FLASHMEM static int on_headers_complete (struct multipartparser *parser)
 {
     if (*((login_form_data_t *)parser->data)->header_value)
         on_header_done(parser);
@@ -435,7 +437,7 @@ static int on_headers_complete (struct multipartparser *parser)
     return 0;
 }
 
-static int on_data (struct multipartparser *parser, const char *data, size_t size)
+FLASHMEM static int on_data (struct multipartparser *parser, const char *data, size_t size)
 {
     login_form_data_t *form = (login_form_data_t *)parser->data;
 
@@ -463,7 +465,7 @@ static int on_data (struct multipartparser *parser, const char *data, size_t siz
     return 0;
 }
 
-static int on_part_end (struct multipartparser *parser)
+FLASHMEM static int on_part_end (struct multipartparser *parser)
 {
     login_form_data_t *form = (login_form_data_t *)parser->data;
 
@@ -482,14 +484,14 @@ static int on_part_end (struct multipartparser *parser)
     return 0;
 }
 
-static int on_body_end (struct multipartparser *parser)
+FLASHMEM static int on_body_end (struct multipartparser *parser)
 {
     ((login_form_data_t *)parser->data)->state = Login_Complete;
 
     return 0;
 }
 
-static bool login_start (http_request_t *request, const char *boundary)
+FLASHMEM static bool login_start (http_request_t *request, const char *boundary)
 {
     if(login_callbacks == NULL && (login_callbacks = malloc(sizeof(struct multipartparser_callbacks)))) {
 
@@ -519,12 +521,12 @@ static bool login_start (http_request_t *request, const char *boundary)
     return parser.data != NULL;
 }
 
-static size_t login_add_chunk (http_request_t *req, const char *data, size_t size)
+FLASHMEM static size_t login_add_chunk (http_request_t *req, const char *data, size_t size)
 {
     return multipartparser_execute(&parser, login_callbacks, data, size);
 }
 
-static err_t login_post_receive_data (http_request_t *request, struct pbuf *p)
+FLASHMEM static err_t login_post_receive_data (http_request_t *request, struct pbuf *p)
 {
     struct pbuf *q = p;
 
@@ -538,7 +540,7 @@ static err_t login_post_receive_data (http_request_t *request, struct pbuf *p)
     return ERR_OK;
 }
 
-static void login_post_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
+FLASHMEM static void login_post_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
 {
     const char *response;
 
@@ -556,7 +558,7 @@ static void login_post_finished (http_request_t *request, char *response_uri, u1
     }
 }
 
-static webui_auth_level_t check_authenticated (ip_addr_t ip, const session_id_t *session_id)
+FLASHMEM static webui_auth_level_t check_authenticated (ip_addr_t ip, const session_id_t *session_id)
 {
     webui_auth_t *current = sessions, *previous = NULL;
     uint32_t now = hal.get_elapsed_ticks();
@@ -587,7 +589,7 @@ static webui_auth_level_t check_authenticated (ip_addr_t ip, const session_id_t 
     return level;
 }
 
-webui_auth_level_t get_auth_level (http_request_t *req)
+FLASHMEM webui_auth_level_t get_auth_level (http_request_t *req)
 {
     session_id_t session_id;
     webui_auth_level_t auth_level = WebUIAuth_None;
@@ -598,7 +600,7 @@ webui_auth_level_t get_auth_level (http_request_t *req)
     return auth_level;
 }
 
-const char *login_handler_post (http_request_t *request)
+FLASHMEM const char *login_handler_post (http_request_t *request)
 {
     int len;
     bool ok;
@@ -619,12 +621,12 @@ const char *login_handler_post (http_request_t *request)
 }
 
 // milliseconds
-uint32_t login_get_timeout_period (void)
+FLASHMEM uint32_t login_get_timeout_period (void)
 {
     return webui.session_timeout * 60 * 1000;
 }
 
-const char *login_handler_get (http_request_t *request)
+FLASHMEM const char *login_handler_get (http_request_t *request)
 {
     char tmp[30];
     login_form_data_t login_data = {0};
@@ -649,7 +651,7 @@ const char *login_handler_get (http_request_t *request)
 
 #endif // WEBUI_AUTH_ENABLE
 
-void login_init (void)
+FLASHMEM void login_init (void)
 {
     if((nvs_address = nvs_alloc(sizeof(webui_settings_t))))
         settings_register(&details);

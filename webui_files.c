@@ -1,13 +1,13 @@
 /*
-  fs_embedded.h - An embedded CNC Controller with rs274/ngc (g-code) support
+  webui_files.c - An embedded CNC Controller with rs274/ngc (g-code) support
 
-  Webserver backend - file system and embedded files for WebUI
+  Webserver backend - embedded files for WebUI
 
   Part of grblHAL
 
   Copyright (c) 2022-2026 Terje Io
 
-  File data is extracted from files Copyright (c) 2021 Luc Lebosse
+  Some file data is extracted from files Copyright (c) 2021 Luc Lebosse
   https://github.com/luc-github/ESP3D-webui
 
   grblHAL is free software: you can redistribute it and/or modify
@@ -26,14 +26,12 @@
 
 #include "driver.h"
 
-#include <stdlib.h>
-#include <string.h>
-
-#include "grbl/vfs.h"
+#include "grbl/fs_embedded.h"
 
 PROGMEM static const embedded_file_t ok_txt = {
     .name = "ok.txt",
     .size = 2,
+    .st_mode.hidden = 1,
     .data = { 'o', 'k' }
 };
 
@@ -42,6 +40,7 @@ PROGMEM static const embedded_file_t ok_txt = {
 PROGMEM static const embedded_file_t favicon_ico = {
     .name = "favicon.ico",
     .size = 1150,
+    .st_mode.hidden = 1,
     .data = { 0, 0, 1, 0, 1, 0, 16, 16, 0, 0, 1, 0, 32, 0, 104, 4,
               0, 0, 22, 0, 0, 0, 40, 0, 0, 0, 16, 0, 0, 0, 32, 0,
               0, 0, 1, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -119,6 +118,7 @@ PROGMEM static const embedded_file_t favicon_ico = {
 PROGMEM static const embedded_file_t index_html_gz = {
     .name = "index.html.gz",
     .size = 11149,
+    .st_mode.hidden = 1,
     .data = { 31, 139, 8, 0, 0, 0, 0, 0, 2, 10, 237, 125, 139, 118, 155, 72,
               182, 232, 175, 32, 102, 90, 129, 81, 9, 163, 135, 95, 200, 72, 215, 78,
               236, 142, 103, 146, 142, 199, 118, 58, 211, 39, 147, 147, 133, 69, 73, 34,
@@ -825,6 +825,7 @@ PROGMEM static const embedded_file_t index_html_gz = {
 PROGMEM static const embedded_file_t ap_login_html = {
     .name = "ap_login.html",
     .size = 3727,
+    .st_mode.hidden = 1,
     .data = { 60, 33, 68, 79, 67, 84, 89, 80, 69, 32, 104, 116, 109, 108, 62, 13,
               10, 60, 104, 116, 109, 108, 32, 108, 97, 110, 103, 61, 34, 101, 110, 34,
               62, 13, 10, 60, 104, 101, 97, 100, 62, 13, 10, 32, 32, 60, 116, 105,
@@ -1062,159 +1063,20 @@ PROGMEM static const embedded_file_t ap_login_html = {
 
 #endif // WIFI_SOFTAP
 
-typedef struct {
-    const embedded_file_t *file;
-    size_t remaining;
-} embedded_filehandle_t;
-
-// Array of pointers to files, NULL terminated
-static const embedded_file_t *ro_files[] = {
-    &ok_txt,
-#if WEBUI_INFLASH
-    &favicon_ico,
-    &index_html_gz,
-#endif
-#if WIFI_SOFTAP
-    &ap_login_html,
-#endif
-    NULL
-};
-
-static const embedded_file_t *find_file (const char *filename)
+FLASHMEM void add_embedded_files (void)
 {
-    uint_fast16_t idx = 0;
-    const embedded_file_t *file = NULL;
-
-    if(*filename == '/')
-        filename++;
-
-    do {
-        if(!strcmp(ro_files[idx]->name, filename))
-            file = ro_files[idx];
-    } while(file == NULL && ro_files[++idx] != NULL);
-
-    return file;
-}
-
-static vfs_file_t *fs_open (const char *filename, const char *mode)
-{
-    vfs_file_t *fileh = NULL;
-
-    if(strchr(mode, 'r')) {
-
-        const embedded_file_t *file = NULL;
-
-        if((file = find_file(filename)) && (fileh = malloc(sizeof(vfs_file_t) + sizeof(embedded_filehandle_t)))) {
-            embedded_filehandle_t *f = (embedded_filehandle_t *)&fileh->handle;
-            f->file = file;
-            fileh->size = f->remaining = file->size;
-
-        }
-    }
-
-    return fileh;
-}
-
-static void fs_close (vfs_file_t *file)
-{
-    free(file);
-}
-
-static size_t fs_read (void *buffer, size_t size, size_t count, vfs_file_t *file)
-{
-    size_t rcount = 0;
-    embedded_filehandle_t *fileh = (embedded_filehandle_t *)&file->handle;
-
-    if(fileh->remaining) {
-        rcount = size * count > fileh->remaining ? fileh->remaining : size * count;
-        memcpy(buffer, &fileh->file->data[fileh->file->size - fileh->remaining], rcount);
-    }
-
-    fileh->remaining -= rcount;
-
-    return rcount;
-}
-
-static size_t fs_write (const void *buffer, size_t size, size_t count, vfs_file_t *file)
-{
-    return 0;
-}
-
-static size_t fs_tell (vfs_file_t *file)
-{
-    embedded_filehandle_t *fileh = (embedded_filehandle_t *)&file->handle;
-
-    return fileh->file->size - fileh->remaining;
-}
-
-static int fs_seek (vfs_file_t *file, size_t offset)
-{
-    embedded_filehandle_t *fileh = (embedded_filehandle_t *)&file->handle;
-
-    if(fileh->file->size <= offset)
-        fileh->remaining = fileh->file->size - offset;
-
-    return fileh->file->size < offset ? fileh->remaining : -1;
-}
-
-static bool fs_eof (vfs_file_t *file)
-{
-    embedded_filehandle_t *fileh = (embedded_filehandle_t *)&file->handle;
-
-    return fileh->remaining == 0;
-}
-
-static int fs_unlink (const char *filename)
-{
-    return -1;
-}
-
-static int fs_dirop (const char *path)
-{
-    return -1;
-}
-
-static vfs_dir_t *fs_opendir (const char *path)
-{
-    return NULL;
-}
-
-static void fs_closedir (vfs_dir_t *dir)
-{
-}
-
-static int fs_stat (const char *filename, vfs_stat_t *st)
-{
-    const embedded_file_t *file;
-
-    if((file = find_file(filename))) {
-        memset(st, 0, sizeof(vfs_stat_t));
-        st->st_size = file->size;
-        st->st_mode.read_only = true;
-    }
-
-    return file ? 0 : -1;
-}
-
-void fs_embedded_mount (void)
-{
-    PROGMEM static const vfs_t fs = {
-        .fs_name = "embedded",
-        .fopen = fs_open,
-        .fclose = fs_close,
-        .fread = fs_read,
-        .fwrite = fs_write,
-        .ftell = fs_tell,
-        .fseek = fs_seek,
-        .feof = fs_eof,
-        .funlink = fs_unlink,
-        .fmkdir = fs_dirop,
-        .fchdir = fs_dirop,
-        .frmdir = fs_dirop,
-        .fopendir = fs_opendir,
-        .fclosedir = fs_closedir,
-        .fstat = fs_stat
+    // Array of pointers to files, NULL terminated
+    static const embedded_file_t *ro_files[] = {
+        &ok_txt,
+    #if WEBUI_INFLASH
+        &favicon_ico,
+        &index_html_gz,
+    #endif
+    #if WIFI_SOFTAP
+        &ap_login_html,
+    #endif
+        NULL
     };
 
-    vfs_mount(NULL, "/embedded", &fs, (vfs_st_mode_t){ .directory = true, .read_only = true, .hidden = true });
+    fs_embedded_mount(ro_files);
 }

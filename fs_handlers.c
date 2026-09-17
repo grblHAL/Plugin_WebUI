@@ -45,13 +45,13 @@
 
 static bool file_is_json = false;
 
-static void data_is_json (void)
+FLASHMEM static void data_is_json (void)
 {
     file_is_json = true;
 }
 
 // Add file to the JSON response array
-static bool add_file (json_out_t *files, char *path, vfs_dirent_t *file, time_t *mtime)
+FLASHMEM static bool add_file (json_out_t *files, char *path, vfs_dirent_t *file, time_t *mtime)
 {
     bool ok;
 
@@ -76,14 +76,14 @@ static bool add_file (json_out_t *files, char *path, vfs_dirent_t *file, time_t 
     return ok;
 }
 
-static char *get_fullpath (char *path, char *filename)
+FLASHMEM static char *get_fullpath (char *path, char *filename)
 {
     static char fullpath[255];
 
     return strcat(strcat(strcpy(fullpath, vfs_fixpath(path)), "/"), filename);
 }
 
-static int sd_scan_dir (json_out_t *files, char *path, uint_fast8_t depth)
+FLASHMEM static int sd_scan_dir (json_out_t *files, char *path, uint_fast8_t depth)
 {
     int res = 0;
     bool scan = true, subdirs = false;
@@ -157,7 +157,7 @@ static int sd_scan_dir (json_out_t *files, char *path, uint_fast8_t depth)
     return res;
 }
 
-bool fs_ls (json_out_t *root, char *path, char *status, vfs_drive_t *drive)
+FLASHMEM bool fs_ls (json_out_t *root, char *path, char *status, vfs_drive_t *drive)
 {
     bool ok;
     json_out_t *files = root;
@@ -191,7 +191,7 @@ bool fs_ls (json_out_t *root, char *path, char *status, vfs_drive_t *drive)
     return ok;
 }
 
-static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, vfs_drive_t *drive)
+FLASHMEM static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, vfs_drive_t *drive)
 {
     bool ok = false;
     json_out_t *root = json_start(file, 10);
@@ -207,7 +207,7 @@ static bool _fs_ls (void *request, char *path, char *status, vfs_file_t *file, v
     return ok;
 }
 
-const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
+FLASHMEM const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 {
     bool ok = false;
     char path[100], filename[100], *fullname;
@@ -330,7 +330,7 @@ const char *fs_action_handler (http_request_t *request, vfs_drive_t *drive)
 #endif
 }
 
-const char *fs_download_handler (http_request_t *request, vfs_drive_t *drive)
+FLASHMEM const char *fs_download_handler (http_request_t *request, vfs_drive_t *drive)
 {
     static char path[256];
 
@@ -347,7 +347,7 @@ const char *fs_download_handler (http_request_t *request, vfs_drive_t *drive)
     return strcat(path, http_get_uri(request));
 }
 
-static err_t fs_post_receive_data (http_request_t *request, struct pbuf *p)
+FLASHMEM static err_t fs_post_receive_data (http_request_t *request, struct pbuf *p)
 {
     struct pbuf *q = p;
 
@@ -361,7 +361,7 @@ static err_t fs_post_receive_data (http_request_t *request, struct pbuf *p)
     return ERR_OK;
 }
 
-static void fs_post_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
+FLASHMEM static void fs_post_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
 {
     vfs_drive_t *drive = NULL;
     vfs_file_t *file = vfs_open("/ram/qry.json", "w");
@@ -397,7 +397,7 @@ static void fs_post_finished (http_request_t *request, char *response_uri, u16_t
     strcpy(response_uri, "/ram/qry.json");
 }
 
-static void fs_on_upload_name_parsed (char *name, void *data)
+FLASHMEM static void fs_on_upload_name_parsed (char *name, void *data)
 {
     char *drive_path = (char *)data;
 
@@ -413,7 +413,7 @@ static void fs_on_upload_name_parsed (char *name, void *data)
     }
 }
 
-const char *fs_upload_handler (http_request_t *request, vfs_drive_t *drive)
+FLASHMEM const char *fs_upload_handler (http_request_t *request, vfs_drive_t *drive)
 {
     static char drive_path[32];
 
@@ -442,7 +442,7 @@ const char *fs_upload_handler (http_request_t *request, vfs_drive_t *drive)
     return NULL;
 }
 
-vfs_drive_t *fs_get_root_drive (void)
+FLASHMEM vfs_drive_t *fs_get_root_drive (void)
 {
     static vfs_drive_t root;
 
@@ -463,7 +463,7 @@ vfs_drive_t *fs_get_root_drive (void)
     return drive ? &root : NULL;
 }
 
-vfs_drive_t *fs_get_sd_drive (void)
+FLASHMEM vfs_drive_t *fs_get_sd_drive (void)
 {
     static vfs_drive_t sd;
 
@@ -484,7 +484,7 @@ vfs_drive_t *fs_get_sd_drive (void)
     return drive ? &sd : NULL;
 }
 
-vfs_drive_t *fs_get_flash_drive (bool add_hidden)
+FLASHMEM vfs_drive_t *fs_get_flash_drive (bool add_hidden)
 {
     static vfs_drive_t flash;
 

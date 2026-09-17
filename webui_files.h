@@ -1,11 +1,11 @@
 /*
-  fs_embedded.h - An embedded CNC Controller with rs274/ngc (g-code) support
+  webui_files.h - An embedded CNC Controller with rs274/ngc (g-code) support
 
   Webserver backend - embedded files for WebUI
 
   Part of grblHAL
 
-  Copyright (c) 2022 Terje Io
+  Copyright (c) 2022-2026 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -23,4 +23,4 @@
 
 #pragma once
 
-void fs_embedded_mount (void);
+void add_embedded_files (void);

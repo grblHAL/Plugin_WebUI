@@ -91,7 +91,7 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
 
 // Shared functions
 
-static json_out_t *json_create_response_hdr (uint_fast16_t cmd, response_hdr_type_t type, bool status_ok, const char *msg, vfs_file_t *file)
+FLASHMEM static json_out_t *json_create_response_hdr (uint_fast16_t cmd, response_hdr_type_t type, bool status_ok, const char *msg, vfs_file_t *file)
 {
     bool ok;
     json_out_t *jstream;
@@ -116,7 +116,7 @@ static json_out_t *json_create_response_hdr (uint_fast16_t cmd, response_hdr_typ
 }
 
 // Add value to the JSON response array
-static bool json_add_value (json_out_t *jstream, char *id, char *value)
+FLASHMEM static bool json_add_value (json_out_t *jstream, char *id, char *value)
 {
     bool ok = true;
 
@@ -132,7 +132,7 @@ static bool json_add_value (json_out_t *jstream, char *id, char *value)
 
 // ESP100 - ESP181 except ESP111 and ESP140
 
-static status_code_t sys_set_setting (setting_id_t id, char *value)
+FLASHMEM static status_code_t sys_set_setting (setting_id_t id, char *value)
 {
     sys_state_t state = state_get();
     status_code_t retval = Status_OK;
@@ -145,7 +145,7 @@ static status_code_t sys_set_setting (setting_id_t id, char *value)
     return retval;
 }
 
-static char *get_setting_value (char *data, setting_id_t id)
+FLASHMEM static char *get_setting_value (char *data, setting_id_t id)
 {
     char *value = NULL;
 
@@ -159,7 +159,7 @@ static char *get_setting_value (char *data, setting_id_t id)
     return value ? data : NULL;
 }
 
-static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     char response[100];
@@ -279,7 +279,7 @@ static status_code_t esp_setting (const struct webui_cmd_binding *command, uint_
 }
 
 // ESP111
-static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_current_ip (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char response[20];
 
@@ -293,7 +293,7 @@ static status_code_t get_current_ip (const struct webui_cmd_binding *command, ui
 }
 
 // ESP140
-static status_code_t get_set_time (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_set_time (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
     char buf[50];
@@ -431,7 +431,7 @@ static status_code_t get_set_time (const struct webui_cmd_binding *command, uint
 }
 
 // ESP200
-static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_sd_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
 #if FS_ENABLE & FS_SDCARD
     char *msg;
@@ -465,7 +465,7 @@ static status_code_t get_sd_status (const struct webui_cmd_binding *command, uin
 }
 
 // ESP220
-static const char *get_pinname (pin_function_t function)
+FLASHMEM static const char *get_pinname (pin_function_t function)
 {
     const char *name = NULL;
     uint_fast8_t idx = sizeof(pin_names) / sizeof(pin_name_t);
@@ -478,7 +478,7 @@ static const char *get_pinname (pin_function_t function)
     return name ? name : "N/A";
 }
 
-static void show_pin_json (xbar_t *pin, void *jstream)
+FLASHMEM static void show_pin_json (xbar_t *pin, void *jstream)
 {
     char id[10];
 
@@ -487,14 +487,14 @@ static void show_pin_json (xbar_t *pin, void *jstream)
     json_add_value((json_out_t *)jstream, (char *)get_pinname(pin->function), id);
 }
 
-static void show_pin_txt (xbar_t *pin, void *file)
+FLASHMEM static void show_pin_txt (xbar_t *pin, void *file)
 {
     char buf[50];
 
     vfs_puts(strappend(buf, 5, (char *)pin->port, uitoa(pin->pin), ": ", get_pinname(pin->function), WEBUI_EOL), (vfs_file_t *)file);
 }
 
-static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     if(json) {
 
@@ -515,7 +515,7 @@ static status_code_t show_pins (const struct webui_cmd_binding *command, uint_fa
 
 
 // Add setting to the JSON response array
-static bool add_setting (json_out_t *jstream, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
+FLASHMEM static bool add_setting (json_out_t *jstream, const setting_detail_t *setting, int32_t bit, uint_fast16_t offset)
 {
     static const char *tmap[] = { "B", "M", "X", "B", "M", "I", "F", "S", "S", "A", "I", "I" };
 
@@ -572,10 +572,6 @@ static bool add_setting (json_out_t *jstream, const setting_detail_t *setting, i
                         if(bit == -1) {
                             uint_fast16_t i, j = strnumentries(setting->format, ',');
                             for(i = 0; ok && i < j; i++) {
-                          //      option = cJSON_CreateObject();
-                          //      if(isv3 && i == 0)
-                          //          cJSON_AddStringToObject(option, strgetentry(opt, setting->format, i, ','), uitoa(1 << bit));
-                          //      else
                                 if(strcmp(strgetentry(opt, setting->format, i, ','), "N/A")) {
                                     if((ok = json_start_object(jstream))) {
                                         ok = json_add_string(jstream, opt, uitoa(i));
@@ -666,12 +662,12 @@ static bool add_setting (json_out_t *jstream, const setting_detail_t *setting, i
     return ok;
 }
 
-static bool add_setting2 (const setting_detail_t *setting, uint_fast16_t offset, void *jstream)
+FLASHMEM static bool add_setting2 (const setting_detail_t *setting, uint_fast16_t offset, void *jstream)
 {
     return add_setting((json_out_t *)jstream, setting, -1, offset);
 }
 
-static int cmp_settings (const void *a, const void *b)
+FLASHMEM static int cmp_settings (const void *a, const void *b)
 {
     uint32_t av = ((*(setting_detail_t **)(a))->group << 16) | (*(setting_detail_t **)(a))->id,
              bv = ((*(setting_detail_t **)(b))->group << 16) | (*(setting_detail_t **)(b))->id;
@@ -679,7 +675,7 @@ static int cmp_settings (const void *a, const void *b)
     return av - bv;
 }
 
-static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_settings (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     uint_fast16_t idx, n_settings = 0;
@@ -743,7 +739,7 @@ static status_code_t get_settings (const struct webui_cmd_binding *command, uint
 }
 
 // ESP401
-static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t set_setting (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
     char *setting_id = webui_get_arg(argc, argv, "P=");
@@ -808,7 +804,7 @@ static status_code_t set_setting (const struct webui_cmd_binding *command, uint_
 #if WIFI_ENABLE
 
 // ESP410
-static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
     json_out_t *jstream;
@@ -848,7 +844,7 @@ static status_code_t get_ap_list (const struct webui_cmd_binding *command, uint_
 
 // ESP420
 
-status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     char buf[200];
     vfs_free_t *mount;
@@ -1015,13 +1011,13 @@ status_code_t webui_v3_get_system_status (uint_fast16_t command_id, uint_fast16_
     return Status_OK;
 }
 
-static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_system_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return webui_v3_get_system_status(command->id, argc, argv, json, file);
 }
 
 // ESP444
-static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     status_code_t status = Status_OK;
 
@@ -1047,7 +1043,7 @@ static status_code_t set_cpu_state (const struct webui_cmd_binding *command, uin
 
 // Shared functions for ESP7xx
 
-static inline char *get_path (char *buf, char *path, vfs_drive_t *drive)
+FLASHMEM static inline char *get_path (char *buf, char *path, vfs_drive_t *drive)
 {
     *buf = '\0';
 
@@ -1057,7 +1053,7 @@ static inline char *get_path (char *buf, char *path, vfs_drive_t *drive)
     return strcat(buf, path);
 }
 
-static status_code_t fs_list_files (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file, vfs_drive_t *drive)
+FLASHMEM static status_code_t fs_list_files (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file, vfs_drive_t *drive)
 {
     bool ok;
     char path[255];
@@ -1083,7 +1079,7 @@ static status_code_t fs_list_files (const struct webui_cmd_binding *command, uin
     return Status_OK; // for now
 }
 
-static status_code_t fs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file, vfs_drive_t *drive)
+FLASHMEM static status_code_t fs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file, vfs_drive_t *drive)
 {
     bool ok = false;
     char response[24] = "";
@@ -1147,7 +1143,7 @@ static status_code_t fs_action (const struct webui_cmd_binding *command, uint_fa
 }
 
 // ESP700
-static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t flash_read_file (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok = false;
     char *cmd = webui_get_arg(argc, argv, NULL), msg[50];
@@ -1175,7 +1171,7 @@ static status_code_t flash_read_file (const struct webui_cmd_binding *command, u
 }
 
 // ESP701
-static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t handle_job_status (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     stream_job_t *job = stream_get_job_info();
@@ -1245,7 +1241,7 @@ static status_code_t handle_job_status (const struct webui_cmd_binding *command,
 }
 
 // ESP710
-static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t flash_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     char *cmd = webui_get_arg(argc, argv, NULL);
@@ -1268,7 +1264,7 @@ static status_code_t flash_format (const struct webui_cmd_binding *command, uint
 }
 
 // ESP715
-static status_code_t sdcard_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t sdcard_format (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     char *cmd = webui_get_arg(argc, argv, NULL);
@@ -1291,43 +1287,43 @@ static status_code_t sdcard_format (const struct webui_cmd_binding *command, uin
 }
 
 // ESP720
-static status_code_t flashfs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t flashfs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return fs_list_files(command, argc, argv, json, file, fs_get_flash_drive(true));
 }
 
 // ESP730
-static status_code_t flashfs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t flashfs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return fs_action(command, argc, argv, json, file, fs_get_flash_drive(true));
 }
 
 // ESP740
-static status_code_t sdcard_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t sdcard_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return fs_list_files(command, argc, argv, json, file, fs_get_sd_drive());
 }
 
 // ESP750
-static status_code_t sdcard_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t sdcard_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return fs_action(command, argc, argv, json, file, fs_get_sd_drive());
 }
 
 // ESP780
-static status_code_t global_fs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t global_fs_ls (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return fs_list_files(command, argc, argv, json, file, fs_get_root_drive());
 }
 
 // ESP790
-static status_code_t global_fs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t global_fs_action (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     return fs_action(command, argc, argv, json, file, fs_get_root_drive());
 }
 
 // ESP800
-static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t get_firmware_spec (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     uint_fast16_t idx;
     char buf[200], hostpath[16], axisletters[10];
@@ -1497,7 +1493,7 @@ PROGMEM static const webui_cmd_binding_t webui_commands[] = {
 };
 
 // ESP0
-static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
+FLASHMEM static status_code_t list_commands (const struct webui_cmd_binding *command, uint_fast16_t argc, char **argv, bool json, vfs_file_t *file)
 {
     bool ok;
     char buf[200];
@@ -1566,7 +1562,7 @@ static status_code_t list_commands (const struct webui_cmd_binding *command, uin
     return Status_OK;
 }
 
-status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
+FLASHMEM status_code_t webui_v3_command_handler (uint32_t command, uint_fast16_t argc, char **argv, webui_auth_level_t auth_level, vfs_file_t *file)
 {
     bool json;
     status_code_t status = Status_Unhandled;

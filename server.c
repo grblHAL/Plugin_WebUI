@@ -33,7 +33,6 @@
 #include "networking/websocketd.h"
 #include "networking/networking.h"
 #include "networking/utils.h"
-#include "networking/cJSON.h"
 #include "networking/http_upload.h"
 #if SSDP_ENABLE
 #include "networking/ssdp.h"
@@ -60,7 +59,7 @@
 #include "../esp_webui/fs_spiffs.h"
 #include "../esp_webui/fs_embedded.h"
 #else
-#include "fs_embedded.h"
+#include "webui_files.h"
 #endif
 
 #include "grbl/vfs.h"
@@ -68,12 +67,18 @@
 #include "grbl/task.h"
 #include "grbl/strutils.h"
 #include "grbl/stream_file.h"
+#include "grbl/stream_json.h"
 
 typedef struct {
     websocket_t *websocket;
     uint32_t timeout;
     uint32_t activity;
 } webui_client_t;
+
+typedef struct {
+    ssid_t ssid;
+    password_t password;
+} wifi_credentials_t;
 
 static bool file_is_json = false, is_v3 = false, maintenance_mode = false;
 static char sys_path[32] = ""; // Directory where index.html.gz was found
@@ -84,31 +89,31 @@ static websocket_on_client_connect_ptr on_client_connect;
 static websocket_on_client_disconnect_ptr on_client_disconnect;
 static websocket_on_protocol_select_ptr on_protocol_select;
 
-bool webui_maintenance_mode (void)
+FLASHMEM bool webui_maintenance_mode (void)
 {
     return maintenance_mode;
 }
 
-char *webui_get_sys_path (void)
+FLASHMEM char *webui_get_sys_path (void)
 {
     return sys_path;
 }
 
-void data_is_json (void)
+FLASHMEM void data_is_json (void)
 {
     file_is_json = true;
 }
 
 #if !WEBUI_AUTH_ENABLE
 
-static webui_auth_level_t get_auth_level (http_request_t *req)
+FLASHMEM static webui_auth_level_t get_auth_level (http_request_t *req)
 {
     return WebUIAuth_Admin;
 }
 
 #endif
 
-static bool get_server_info (network_info_t *info, network_flags_t flags, void *data)
+FLASHMEM static bool get_server_info (network_info_t *info, network_flags_t flags, void *data)
 {
     bool ok;
 
@@ -119,7 +124,7 @@ static bool get_server_info (network_info_t *info, network_flags_t flags, void *
     return ok;
 }
 
-network_info_t *webui_get_server_info (void)
+FLASHMEM network_info_t *webui_get_server_info (void)
 {
     static network_info_t info;
 
@@ -128,7 +133,7 @@ network_info_t *webui_get_server_info (void)
     return &info;
 }
 
-void websocket_client_connect (websocket_t *websocket)
+FLASHMEM void websocket_client_connect (websocket_t *websocket)
 {
     char buf[24];
 
@@ -149,7 +154,7 @@ void websocket_client_connect (websocket_t *websocket)
         on_client_connect(websocket);
 }
 
-void websocket_client_disconnect (websocket_t *websocket)
+FLASHMEM void websocket_client_disconnect (websocket_t *websocket)
 {
     if(client.websocket && client.websocket != websocket)
         websocket_claim_stream(client.websocket);
@@ -158,7 +163,7 @@ void websocket_client_disconnect (websocket_t *websocket)
         on_client_disconnect(websocket);
 }
 
-void websocket_on_frame_received (websocket_t *websocket, void *data, size_t size)
+FLASHMEM void websocket_on_frame_received (websocket_t *websocket, void *data, size_t size)
 {
 #if WEBUI_AUTH_ENABLE
     if(size > 5 && !strncmp((char *)data, "PING:", 5)) {
@@ -177,7 +182,7 @@ void websocket_on_frame_received (websocket_t *websocket, void *data, size_t siz
 #endif
 }
 
-static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
+FLASHMEM static char *websocket_protocol_select (websocket_t *websocket, char *protocols, bool *is_binary)
 {
     network_info_t *network = webui_get_server_info();
 
@@ -194,14 +199,14 @@ static char *websocket_protocol_select (websocket_t *websocket, char *protocols,
 
 #if N_AXIS > 3 && defined(ESP_PLATFORM)
 
-static void soft_reset (void *data)
+FLASHMEM static void soft_reset (void *data)
 {
     websocketd_RxPutC(CMD_RESET);
 }
 
 #endif
 
-static const char *command (http_request_t *request)
+FLASHMEM static const char *command (http_request_t *request)
 {
     static bool busy;
 
@@ -442,7 +447,7 @@ static const char *command (http_request_t *request)
 
 /* Handler to redirect incoming GET request for /index.html to /
  * This can be overridden by uploading file with same name */
-static const char *redirect_html_get_handler(http_request_t *request, char *location)
+FLASHMEM static const char *redirect_html_get_handler(http_request_t *request, char *location)
 {
     http_set_response_status(request, "307 Temporary Redirect");
     http_set_response_header(request, "Location", location);
@@ -450,7 +455,7 @@ static const char *redirect_html_get_handler(http_request_t *request, char *loca
     return NULL;
 }
 
-static const char *get_handler (http_request_t *request)
+FLASHMEM static const char *get_handler (http_request_t *request)
 {
     network_info_t *network = webui_get_server_info();
 
@@ -489,61 +494,51 @@ static const char *get_handler (http_request_t *request)
     return http_get_uri(request);
 }
 
-static const char *wifi_scan_handler (http_request_t *request)
+FLASHMEM static const char *wifi_scan_handler (http_request_t *request)
 {
     bool ok = false;
     ap_list_t *ap_list = wifi_get_aplist();
 
     if(ap_list && ap_list->ap_records) {
 
-        cJSON *root;
+        vfs_file_t *file;
+        json_out_t *jstream;
 
-        if((root = cJSON_CreateObject())) {
-
-            cJSON *ap, *aps;
-
-            ok = cJSON_AddStringToObject(root, "ap", ap_list->ap_selected ? (char *)ap_list->ap_selected : "") != NULL;
-            ok = ok && cJSON_AddStringToObject(root, "status", ap_list->ap_status) != NULL;
+        if((ok = !!(jstream = json_start((file = vfs_open("/ram/data.json", "w")), 5)))) {
+            ok = json_add_string(jstream, "ap", ap_list->ap_selected ? (char *)ap_list->ap_selected : "");
+            ok = ok && json_add_string(jstream, "status", "ok");
+            ok = ok && json_add_string(jstream, "authentication_lvl", "admin");
 
             if(ap_list->ap_selected)
-                cJSON_AddStringToObject(root, "ip", ip4addr_ntoa(&ap_list->ip_addr));
+                ok = ok && json_add_string(jstream, "ip", ip4addr_ntoa(&ap_list->ip_addr));
 
-            if((aps = cJSON_AddArrayToObject(root, "aplist"))) {
-
+            if((ok = ok && json_start_array(jstream, "aplist"))) {
                 for(int i = 0; i < ap_list->ap_num; i++) {
-                    if((ok = (ap = cJSON_CreateObject()) != NULL))
+                    if((ok = ok & json_start_object(jstream)))
                     {
-                        ok = cJSON_AddStringToObject(ap, "ssid", (char *)ap_list->ap_records[i].ssid) != NULL;
-                        ok = ok && cJSON_AddStringToObject(ap, "security", wifi_get_authmode_name(ap_list->ap_records[i].authmode)) != NULL;
-                        ok = ok && cJSON_AddNumberToObject(ap, "primary", (double)ap_list->ap_records[i].primary) != NULL;
-                        ok = ok && cJSON_AddNumberToObject(ap, "rssi",  (double)ap_list->ap_records[i].rssi) != NULL;
-                        if(ok)
-                            cJSON_AddItemToArray(aps, ap);
+                        ok = json_add_string(jstream, "ssid", (char *)ap_list->ap_records[i].ssid);
+                        ok = ok && json_add_string(jstream, "security", wifi_get_authmode_name(ap_list->ap_records[i].authmode));
+                        ok = ok && json_add_int(jstream, "primary", (int32_t)ap_list->ap_records[i].primary);
+                        ok = ok && json_add_int(jstream, "rssi", (int32_t)ap_list->ap_records[i].rssi) && json_end_object(jstream);
                     }
                 }
             }
 
-            if(ok) {
-                char *resp = cJSON_PrintUnformatted(root);
-#if xCORS_ENABLE
-                http_set_rom_response_header(req, "Access-Control-Allow-Origin: *" HTTP_EOL);
-                http_set_rom_response_header(req, "Access-Control-Allow-Methods: POST,GET,OPTIONS" HTTP_EOL);
-#endif
-                vfs_file_t *file = vfs_open("/ram/data.json", "w");
-                vfs_puts(resp, file);
-                vfs_close(file);
-
-                free(resp);
-            }
-
-            if(root)
-                cJSON_Delete(root);
+            ok = ok && json_end_array(jstream) && json_end(jstream);
         }
 
-        if(!ok)
-            http_set_response_status(request, "500 Internal Server Error");
-    } else
+        if(file)
+            vfs_close(file);
+    }
+
+    if(!ok)
         http_set_response_status(request, "500 Internal Server Error");
+#if xCORS_ENABLE
+    else {
+        http_set_rom_response_header(req, "Access-Control-Allow-Origin: *" HTTP_EOL);
+        http_set_rom_response_header(req, "Access-Control-Allow-Methods: POST,GET,OPTIONS" HTTP_EOL);
+    }
+#endif
 
     if(ap_list)
         wifi_release_aplist();
@@ -556,7 +551,7 @@ typedef struct {
     char payload[1];
 } wifi_login_data_t;
 
-static err_t wifi_login_receive_data (http_request_t *request, struct pbuf *p)
+FLASHMEM static err_t wifi_login_receive_data (http_request_t *request, struct pbuf *p)
 {
 //    struct pbuf *q = p;
 
@@ -573,40 +568,53 @@ static err_t wifi_login_receive_data (http_request_t *request, struct pbuf *p)
     return ERR_OK;
 }
 
-static void wifi_login_receive_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
+FLASHMEM static bool get_cred (char *tag, char *value, bool is_string, void *data)
 {
-    bool ok;
-    cJSON *cred;
-    wifi_login_data_t *login = (wifi_login_data_t *)request->private_data;
+    wifi_credentials_t *cred = (wifi_credentials_t *)data;
 
-    if((ok = (cred = cJSON_Parse(login->payload)))) {
-        cJSON *ssid = cJSON_GetObjectItemCaseSensitive(cred, "ssid");
-        cJSON *password = cJSON_GetObjectItemCaseSensitive(cred, "password");
-
-        ok = ssid && password && wifi_ap_connect(ssid->valuestring, password->valuestring);
-
-        cJSON_Delete(cred);
+    if(!strcmp(tag, "ssid")) {
+        if(strlen(tag) < sizeof(cred->ssid))
+            strcpy(cred->ssid, value);
+    } else if(!strcmp(tag, "password")) {
+        if(strlen(tag) < sizeof(cred->password))
+            strcpy(cred->password, value);
     }
 
-    if(ok) {
-        http_set_response_status(request, "202 Accepted");
-    } else
-        http_set_response_status(request, "400 Bad Request");
-
-    vfs_file_t *file = vfs_open("/ram/data.txt", "w");
-    vfs_puts("Connecting...", file);
-    vfs_close(file);
-
-    strcpy(response_uri, "/ram/data.txt");
+    return *cred->ssid && *cred->password;
 }
 
-void wifi_login_completed (void *data)
+FLASHMEM static void wifi_login_receive_finished (http_request_t *request, char *response_uri, u16_t response_uri_len)
+{
+    bool ok;
+    wifi_credentials_t cred = {0};
+    wifi_login_data_t *login = (wifi_login_data_t *)request->private_data;
+    char cdata[sizeof(wifi_credentials_t) + 20];
+
+    if((ok = login->content_len < sizeof(cdata))) {
+
+        strncpy(cdata, login->payload, login->content_len);
+        *(cdata + login->content_len) = '\0';
+
+        if((ok = json_parse_string(cdata, get_cred, &cred) && wifi_ap_connect(cred.ssid, cred.password))) {
+            vfs_file_t *file;
+            if((ok = !!(file = vfs_open("/ram/data.txt", "w")))) {
+                strcpy(response_uri, "/ram/data.txt");
+                vfs_puts("Connecting...", file);
+                vfs_close(file);
+            }
+        }
+    }
+
+    http_set_response_status(request, ok ? "202 Accepted" : "400 Bad Request");
+}
+
+FLASHMEM void wifi_login_completed (void *data)
 {
     if(data)
         free(data);
 }
 
-static const char *wifi_connect_handler (http_request_t *request)
+FLASHMEM static const char *wifi_connect_handler (http_request_t *request)
 {
     wifi_login_data_t *login;
     char *value = NULL;
@@ -638,7 +646,7 @@ static const char *wifi_connect_handler (http_request_t *request)
     return NULL;
 }
 
-static const char *wifi_disconnect_handler (http_request_t *request)
+FLASHMEM static const char *wifi_disconnect_handler (http_request_t *request)
 {
     bool disconnect = false;
 
@@ -658,7 +666,7 @@ static const char *wifi_disconnect_handler (http_request_t *request)
 }
 
 #if CORS_ENABLE
-static const char *wifi_options_handler (http_request_t *req)
+FLASHMEM static const char *wifi_options_handler (http_request_t *req)
 {
     http_set_rom_response_header(req, "Access-Control-Allow-Origin: *" HTTP_EOL);
     http_set_rom_response_header(req, "Access-Control-Request-Headers: *" HTTP_EOL);
@@ -670,7 +678,7 @@ static const char *wifi_options_handler (http_request_t *req)
 
 #endif // WIFI_ENABLE && WIFI_SOFTAP
 
-bool is_authorized (http_request_t *req, webui_auth_level_t min_level, vfs_file_t *file)
+FLASHMEM bool is_authorized (http_request_t *req, webui_auth_level_t min_level, vfs_file_t *file)
 {
 #if WEBUI_AUTH_ENABLE
     webui_auth_level_t auth_level;
@@ -692,7 +700,7 @@ bool is_authorized (http_request_t *req, webui_auth_level_t min_level, vfs_file_
 
 static driver_setup_ptr driver_setup;
 
-static bool webui_setup (settings_t *settings)
+FLASHMEM static bool webui_setup (settings_t *settings)
 {
     bool ok;
 
@@ -706,27 +714,20 @@ static bool webui_setup (settings_t *settings)
 
 #if !WEBUI_AUTH_ENABLE
 
-static const char *login_handler_get (http_request_t *request)
+FLASHMEM static const char *login_handler_get (http_request_t *request)
 {
     bool ok = false;
-    cJSON *root;
+    vfs_file_t *file;
+    json_out_t *jstream;
 
-    if((root = cJSON_CreateObject())) {
-
-        ok = cJSON_AddStringToObject(root, "status", "ok") != NULL;
-        ok = ok && cJSON_AddStringToObject(root, "authentication_lvl", "admin") != NULL;
-
-        if(ok) {
-            char *resp = cJSON_PrintUnformatted(root);
-            vfs_file_t *file = vfs_open("/ram/qry.json", "w");
-            vfs_puts(resp, file);
-            vfs_close(file);
-            free(resp);
-        }
-
-        if(root)
-            cJSON_Delete(root);
+    if((ok = !!(jstream = json_start((file = vfs_open("/ram/qry.json", "w")), 2)))) {
+        ok = json_add_string(jstream, "status", "ok");
+        ok = ok & json_add_string(jstream, "authentication_lvl", "admin");
+        ok = ok & json_end(jstream);
     }
+
+    if(file)
+        vfs_close(file);
 
     return ok ? "/ram/qry.json" : NULL;
 }
@@ -735,7 +736,7 @@ static const char *login_handler_get (http_request_t *request)
 
 #if WEBUI_ENABLE != 2
 
-static const char *config_handler_get (http_request_t *request)
+FLASHMEM static const char *config_handler_get (http_request_t *request)
 {
     char data[10];
     bool is_json = false;
@@ -758,7 +759,7 @@ static const char *config_handler_get (http_request_t *request)
 
 #endif
 
-bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mode)
+FLASHMEM bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mode)
 {
     if(*path == '\0' || (*file = vfs_open(strcat(path, uri + 1), mode)) == NULL) {
 #if WEBUI_INFLASH
@@ -776,7 +777,7 @@ bool file_search (char *path, const char *uri, vfs_file_t **file, const char *mo
     return *file != NULL;
 }
 
-const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t **file, const char *mode)
+FLASHMEM const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t **file, const char *mode)
 {
     char path[32];
     vfs_drive_t *flashfs = fs_get_flash_drive(true);
@@ -832,15 +833,15 @@ const char *file_redirect (http_request_t *request, const char *uri, vfs_file_t 
     return uri;
 }
 
-static void webui_options (bool newopt)
+FLASHMEM static void webui_options (bool newopt)
 {
     on_report_options(newopt);
 
     if(!newopt)
-        report_plugin("WebUI", "0.31");
+        report_plugin("WebUI", "0.32");
 }
 
-void webui_init (void)
+FLASHMEM void webui_init (void)
 {
     login_init(); // handles WebUI settings so always call!
 
@@ -968,7 +969,7 @@ void webui_init (void)
     httpd_register_uri_handlers(cgi, sizeof(cgi) / sizeof(httpd_uri_handler_t));
 
     fs_ram_mount();
-    fs_embedded_mount();
+    add_embedded_files();
 }
 
 #endif // WEBUI_ENABLE
