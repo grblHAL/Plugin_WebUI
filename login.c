@@ -341,17 +341,13 @@ FLASHMEM static const char *login (login_form_data_t *login)
         }
     }
 
-    vfs_file_t *file;
     json_out_t *jstream;
 
-    if((ok = !!(jstream = json_start((file = vfs_open("/ram/data.json", "w")), 2)))) {
+    if((ok = !!(jstream = json_start(vfs_open("/ram/data.json", "w"), 2)))) {
         ok = json_add_string(jstream, "status", msg);
         ok = ok & json_add_string(jstream, "authentication_lvl", authleveltostr(auth_level));
-        ok = ok & json_end(jstream);
+        json_close(jstream);
     }
-
-    if(file)
-        vfs_close(file);
 
     return ok ? "/ram/data.json" : NULL;
 }

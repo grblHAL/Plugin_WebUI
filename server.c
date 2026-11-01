@@ -54,13 +54,7 @@
 #include "commands_v2.h"
 #include "commands_v3.h"
 #include "fs_handlers.h"
-
-#if ESP_PLATFORM
-#include "../esp_webui/fs_spiffs.h"
-#include "../esp_webui/fs_embedded.h"
-#else
 #include "webui_files.h"
-#endif
 
 #include "grbl/vfs.h"
 #include "grbl/fs_ram.h"
@@ -501,10 +495,9 @@ FLASHMEM static const char *wifi_scan_handler (http_request_t *request)
 
     if(ap_list && ap_list->ap_records) {
 
-        vfs_file_t *file;
         json_out_t *jstream;
 
-        if((ok = !!(jstream = json_start((file = vfs_open("/ram/data.json", "w")), 5)))) {
+        if((ok = !!(jstream = json_start(vfs_open("/ram/data.json", "w"), 5)))) {
             ok = json_add_string(jstream, "ap", ap_list->ap_selected ? (char *)ap_list->ap_selected : "");
             ok = ok && json_add_string(jstream, "status", "ok");
             ok = ok && json_add_string(jstream, "authentication_lvl", "admin");
@@ -524,11 +517,9 @@ FLASHMEM static const char *wifi_scan_handler (http_request_t *request)
                 }
             }
 
-            ok = ok && json_end_array(jstream) && json_end(jstream);
+            ok = ok && json_end_array(jstream);
+            json_close(jstream);
         }
-
-        if(file)
-            vfs_close(file);
     }
 
     if(!ok)
@@ -717,17 +708,13 @@ FLASHMEM static bool webui_setup (settings_t *settings)
 FLASHMEM static const char *login_handler_get (http_request_t *request)
 {
     bool ok = false;
-    vfs_file_t *file;
     json_out_t *jstream;
 
-    if((ok = !!(jstream = json_start((file = vfs_open("/ram/qry.json", "w")), 2)))) {
+    if((ok = !!(jstream = json_start(vfs_open("/ram/qry.json", "w"), 2)))) {
         ok = json_add_string(jstream, "status", "ok");
         ok = ok & json_add_string(jstream, "authentication_lvl", "admin");
-        ok = ok & json_end(jstream);
+        json_close(jstream);
     }
-
-    if(file)
-        vfs_close(file);
 
     return ok ? "/ram/qry.json" : NULL;
 }
