@@ -17,10 +17,10 @@ For drivers with FlashFS support \(see table above\) enter `<ip address>/` or `<
 the latter if it is for an update.  
 Replace `<ip address>` with the controller IP address. Tip: Use `$I` to find the IP address if dynamically assigned. 
 Then click on the _Interface_ top menu item in the page shown and navigate to the _dist/CNC/grblHAL_ folder and download _index.html.gz_.
-You may download _index.html.gz_ directly via this [link](https://raw.githubusercontent.com/luc-github/ESP3D-WEBUI/3.0/dist/CNC/GRBLHal/index.html.gz).
+You may download _index.html.gz_ directly via this [link](https://raw.githubusercontent.com/luc-github/ESP3D-WEBUI/3.1/dist/CNC/GRBLHal/index.html.gz).
 Upload the file via the upload button in the _FileSystem_ panel.
 
-For drivers without FlashFS support download directly or from [this page](https://github.com/luc-github/ESP3D-WEBUI/tree/3.0/dist/CNC/GRBLHal), create a _www_ folder on the SD card and copy the download file there.
+For drivers without FlashFS support download directly or from [this page](https://github.com/luc-github/ESP3D-WEBUI/tree/3.1/dist/CNC/GRBLHal), create a _www_ folder on the SD card and copy the download file there.
 If the SD card is mounted in the controller then the folder can be created and the file copied either via ftp or WebDAV provided the protocol to be used has been activated.
 
 Finally enter the controller IP address in a browser window, if all is well the WebUI will then be loaded.
@@ -38,4 +38,4 @@ Finally enter the controller IP address in a browser window, if all is well the 
 [SD card plugin](https://github.com/grblHAL/Plugin_SD_card)
 
 ---
-2023-02-13
+2026-11-14
